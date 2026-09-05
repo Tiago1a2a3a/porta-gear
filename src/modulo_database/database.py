@@ -1,0 +1,332 @@
+"""Operações do banco SQLite local.
+
+Este arquivo contém somente regras de dados. A criação e a preparação da
+instância usada pelo sistema ficam em ``setup_database.py``.
+"""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+import sqlite3
+
+
+class ErroDatabase(Exception):
+    """Erro de validação ou persistência do banco local."""
+
+
+@dataclass(frozen=True)
+class Usuario:
+    id_usuario: str
+    nome: str
+    uid_cartao: str
+    ativo: bool
+
+
+@dataclass(frozen=True)
+class DecisaoAcesso:
+    uid_cartao: str
+    autorizado: bool
+    motivo: str
+    usuario: Usuario | None
+
+
+def normalizar_uid(valor: str) -> str:
+    """Converte o UID para hexadecimal maiúsculo sem separadores."""
+    uid = "".join(
+        caractere
+        for caractere in valor.upper()
+        if caractere not in " :-\t\r\n"
+    )
+
+    if len(uid) < 8 or len(uid) % 2 != 0:
+        raise ErroDatabase(
+            "UID inválido. Informe bytes hexadecimais, por exemplo 04A1B2C3."
+        )
+    if any(caractere not in "0123456789ABCDEF" for caractere in uid):
+        raise ErroDatabase("UID inválido. Use somente caracteres hexadecimais.")
+
+    return uid
+
+
+class BancoAcesso:
+    """Cadastro, consulta e registro de acessos no SQLite."""
+
+    def __init__(self, caminho: str | Path):
+        self.caminho = Path(caminho)
+
+    def _conectar(self) -> sqlite3.Connection:
+        self.caminho.parent.mkdir(parents=True, exist_ok=True)
+        conexao = sqlite3.connect(self.caminho)
+        conexao.row_factory = sqlite3.Row
+        conexao.execute("PRAGMA foreign_keys = ON")
+        conexao.execute("PRAGMA busy_timeout = 5000")
+        return conexao
+
+    @contextmanager
+    def _sessao(self):
+        conexao = self._conectar()
+        try:
+            yield conexao
+            conexao.commit()
+        except Exception:
+            conexao.rollback()
+            raise
+        finally:
+            conexao.close()
+
+    def inicializar(self) -> None:
+        """Cria as tabelas necessárias quando ainda não existem."""
+        with self._sessao() as conexao:
+            conexao.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    card_uid TEXT NOT NULL UNIQUE,
+                    is_active INTEGER NOT NULL DEFAULT 1
+                        CHECK (is_active IN (0, 1)),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS access_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT,
+                    card_uid TEXT NOT NULL,
+                    granted INTEGER NOT NULL CHECK (granted IN (0, 1)),
+                    reason TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_access_log_occurred_at
+                    ON access_log (occurred_at DESC);
+                """
+            )
+
+    def adicionar_usuario(
+        self,
+        id_usuario: str,
+        nome: str,
+        uid_cartao: str,
+        ativo: bool = True,
+    ) -> Usuario:
+        """Adiciona um usuário e impede IDs ou cartões duplicados."""
+        id_usuario = id_usuario.strip()
+        nome = nome.strip()
+        uid_cartao = normalizar_uid(uid_cartao)
+
+        if not id_usuario:
+            raise ErroDatabase("O ID do usuário é obrigatório.")
+        if not nome:
+            raise ErroDatabase("O nome do usuário é obrigatório.")
+
+        agora = _timestamp()
+        try:
+            with self._sessao() as conexao:
+                conexao.execute(
+                    """
+                    INSERT INTO users
+                        (user_id, name, card_uid, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (id_usuario, nome, uid_cartao, int(ativo), agora, agora),
+                )
+        except sqlite3.IntegrityError as erro:
+            raise ErroDatabase(
+                "ID de usuário ou UID do cartão já cadastrado."
+            ) from erro
+
+        return Usuario(id_usuario, nome, uid_cartao, ativo)
+
+    def listar_usuarios(self) -> list[Usuario]:
+        """Retorna todos os usuários em ordem alfabética."""
+        with self._sessao() as conexao:
+            linhas = conexao.execute(
+                """
+                SELECT user_id, name, card_uid, is_active
+                FROM users
+                ORDER BY name, user_id
+                """
+            ).fetchall()
+        return [_usuario_da_linha(linha) for linha in linhas]
+
+    def buscar_usuario_por_uid(self, uid_cartao: str) -> Usuario | None:
+        """Procura um cadastro pelo UID do cartão."""
+        uid_cartao = normalizar_uid(uid_cartao)
+        with self._sessao() as conexao:
+            linha = conexao.execute(
+                """
+                SELECT user_id, name, card_uid, is_active
+                FROM users
+                WHERE card_uid = ?
+                """,
+                (uid_cartao,),
+            ).fetchone()
+        return _usuario_da_linha(linha) if linha is not None else None
+
+    def alterar_usuario(
+        self,
+        id_usuario: str,
+        *,
+        nome: str | None = None,
+        uid_cartao: str | None = None,
+        ativo: bool | None = None,
+    ) -> Usuario:
+        """Altera somente os campos informados de um cadastro existente."""
+        if nome is None and uid_cartao is None and ativo is None:
+            raise ErroDatabase("Informe pelo menos um campo para alterar.")
+
+        campos: list[str] = []
+        valores: list[str | int] = []
+
+        if nome is not None:
+            nome = nome.strip()
+            if not nome:
+                raise ErroDatabase("O nome do usuário não pode ficar vazio.")
+            campos.append("name = ?")
+            valores.append(nome)
+
+        if uid_cartao is not None:
+            campos.append("card_uid = ?")
+            valores.append(normalizar_uid(uid_cartao))
+
+        if ativo is not None:
+            campos.append("is_active = ?")
+            valores.append(int(ativo))
+
+        campos.append("updated_at = ?")
+        valores.append(_timestamp())
+        valores.append(id_usuario)
+
+        try:
+            with self._sessao() as conexao:
+                cursor = conexao.execute(
+                    f"UPDATE users SET {', '.join(campos)} WHERE user_id = ?",
+                    valores,
+                )
+        except sqlite3.IntegrityError as erro:
+            raise ErroDatabase("O novo UID já pertence a outro usuário.") from erro
+
+        if cursor.rowcount != 1:
+            raise ErroDatabase("Usuário não encontrado.")
+
+        usuario = self.buscar_usuario_por_id(id_usuario)
+        if usuario is None:
+            raise ErroDatabase("Usuário não encontrado após a alteração.")
+        return usuario
+
+    def buscar_usuario_por_id(self, id_usuario: str) -> Usuario | None:
+        """Procura um cadastro pelo ID do usuário."""
+        with self._sessao() as conexao:
+            linha = conexao.execute(
+                """
+                SELECT user_id, name, card_uid, is_active
+                FROM users
+                WHERE user_id = ?
+                """,
+                (id_usuario,),
+            ).fetchone()
+        return _usuario_da_linha(linha) if linha is not None else None
+
+    def definir_usuario_ativo(self, id_usuario: str, ativo: bool) -> bool:
+        """Ativa ou desativa um cadastro."""
+        with self._sessao() as conexao:
+            cursor = conexao.execute(
+                """
+                UPDATE users
+                SET is_active = ?, updated_at = ?
+                WHERE user_id = ?
+                """,
+                (int(ativo), _timestamp(), id_usuario),
+            )
+        return cursor.rowcount == 1
+
+    def remover_usuario(self, id_usuario: str) -> bool:
+        """Remove um cadastro pelo ID."""
+        with self._sessao() as conexao:
+            cursor = conexao.execute(
+                "DELETE FROM users WHERE user_id = ?",
+                (id_usuario,),
+            )
+        return cursor.rowcount == 1
+
+    def verificar_acesso(self, uid_cartao: str) -> DecisaoAcesso:
+        """Verifica cadastro e estado ativo e registra o resultado."""
+        uid_cartao = normalizar_uid(uid_cartao)
+        usuario = self.buscar_usuario_por_uid(uid_cartao)
+
+        if usuario is None:
+            decisao = DecisaoAcesso(
+                uid_cartao,
+                False,
+                "cartao_nao_cadastrado",
+                None,
+            )
+        elif not usuario.ativo:
+            decisao = DecisaoAcesso(
+                uid_cartao,
+                False,
+                "usuario_inativo",
+                usuario,
+            )
+        else:
+            decisao = DecisaoAcesso(
+                uid_cartao,
+                True,
+                "acesso_autorizado",
+                usuario,
+            )
+
+        self.registrar_acesso(decisao)
+        return decisao
+
+    def registrar_acesso(self, decisao: DecisaoAcesso) -> None:
+        """Grava uma decisão de acesso no histórico local."""
+        with self._sessao() as conexao:
+            conexao.execute(
+                """
+                INSERT INTO access_log
+                    (user_id, card_uid, granted, reason, occurred_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    decisao.usuario.id_usuario if decisao.usuario else None,
+                    decisao.uid_cartao,
+                    int(decisao.autorizado),
+                    decisao.motivo,
+                    _timestamp(),
+                ),
+            )
+
+    def acessos_recentes(self, limite: int = 20) -> list[sqlite3.Row]:
+        """Retorna os registros mais recentes."""
+        if limite < 1:
+            raise ErroDatabase("O limite de registros deve ser maior que zero.")
+
+        with self._sessao() as conexao:
+            return conexao.execute(
+                """
+                SELECT id, user_id, card_uid, granted, reason, occurred_at
+                FROM access_log
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limite,),
+            ).fetchall()
+
+
+def _timestamp() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _usuario_da_linha(linha: sqlite3.Row) -> Usuario:
+    return Usuario(
+        id_usuario=linha["user_id"],
+        nome=linha["name"],
+        uid_cartao=linha["card_uid"],
+        ativo=bool(linha["is_active"]),
+    )
+
