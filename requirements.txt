@@ -1,3 +1,4 @@
-# O núcleo Python usa somente a biblioteca padrão.
+# O núcleo Python usa somente a biblioteca padrão e gpiod.
 # Dependências do Luckfox para compilar o leitor nativo: libnfc, cabeçalhos,
 # pkg-config, make e um compilador C.
+gpiod>=1.5.0
