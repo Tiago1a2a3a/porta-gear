@@ -101,6 +101,20 @@ class TestesDatabase(unittest.TestCase):
         registros = self.banco.acessos_recentes(2)
         self.assertEqual(registros[1]["user_name"], "Ana-exl")
 
+    def test_autenticacao_admin_padrao_e_alteracao(self):
+        # Senha padrão de fábrica
+        self.assertTrue(self.banco.verificar_senha_admin("123456789"))
+        self.assertFalse(self.banco.verificar_senha_admin("senha_errada"))
+
+        # Alteração com sucesso
+        self.assertTrue(self.banco.alterar_senha_admin("123456789", "nova_senha_admin"))
+        self.assertTrue(self.banco.verificar_senha_admin("nova_senha_admin"))
+        self.assertFalse(self.banco.verificar_senha_admin("123456789"))
+
+        # Falha ao alterar com senha atual incorreta
+        with self.assertRaises(ErroDatabase):
+            self.banco.alterar_senha_admin("senha_antiga_errada", "outra_senha")
+
 
 if __name__ == "__main__":
     unittest.main()

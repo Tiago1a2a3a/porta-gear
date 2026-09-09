@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Porta GEAR - Controle de Acesso</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- ========================================================================
+       TELA DE BLOQUEIO / LOGIN (MODO BLUR COM CARD MINIMALISTA)
+       ======================================================================== -->
+  <div id="auth-overlay" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-top-accent"></div>
+
+      <form id="form-login" onsubmit="realizarLogin(event)" class="auth-form-body">
+        <div class="auth-field-wrapper">
+          <label for="input-senha-login" class="auth-field-label">Senha de Administrador</label>
+          <div class="auth-input-container">
+            <svg class="auth-input-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+            </svg>
+            <input
+              type="password"
+              id="input-senha-login"
+              class="auth-input-control"
+              placeholder="Digite sua senha de acesso"
+              required
+              autocomplete="current-password"
+              autofocus
+            >
+            <button
+              type="button"
+              class="auth-eye-btn"
+              onclick="toggleVisibilidadeSenhaSvg('input-senha-login', this)"
+              title="Exibir/Ocultar senha"
+            >
+              <svg id="eye-icon-input-senha-login" class="eye-svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div id="auth-error-box" class="auth-alert-box" style="display: none;"></div>
+
+        <button type="submit" id="btn-submit-login" class="btn-auth-action">
+          <span id="btn-submit-login-text">Desbloquear</span>
+          <svg class="btn-arrow-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-7.85-1.42 1.42L16.86 11H5v2z"/>
+          </svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       TOPBAR OFICIAL GEAR
+       ======================================================================== -->
+  <header class="topbar">
+    <div class="brand-section">
+      <img src="/static/img/gear-logo.png" alt="GEAR Robótica" class="brand-logo-img" onerror="this.src='/static/img/gear-icon.svg'">
+      <div class="brand-text-block">
+        <div class="brand-title">PORTA <span class="red">GEAR</span></div>
+        <div class="brand-subtitle">Controle de Acesso da Fechadura</div>
+      </div>
+    </div>
+
+    <div class="topbar-controls">
+      <!-- Seletor de Modo (Pill Switch) -->
+      <div class="mode-selector-pill" title="Alternar modo operacional do sistema">
+        <button id="pill-mode-producao" class="mode-pill-btn active producao" onclick="setSystemMode('PRODUCAO')">
+          🛡️ Produção
+        </button>
+        <button id="pill-mode-cadastro" class="mode-pill-btn" onclick="setSystemMode('CADASTRO')">
+          ⚙️ Cadastro
+        </button>
+      </div>
+
+      <!-- Botão Destravar Fechadura -->
+      <button class="btn-topbar-unlock" onclick="triggerOpenDoor()" title="Aciona o relé da fechadura imediatamente">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 19V5C19 3.9 18.1 3 17 3H7C5.9 3 5 3.9 5 5V19H3V21H21V19H19M11 11H9V9H11V11M17 19H7V5H17V19Z"/>
+        </svg>
+        <span id="btn-unlock-label">Destravar Fechadura</span>
+      </button>
+
+      <!-- Ações de Sessão e Segurança -->
+      <button class="btn-topbar-sec btn-topbar-logout" onclick="realizarLogout()" title="Bloquear painel e encerrar sessão">
+        🔒 Sair
+      </button>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       APP SHELL (Sidebar + Main Content)
+       ======================================================================== -->
+  <div class="app-shell">
+
+    <!-- Sidebar de Navegação -->
+    <aside class="sidebar">
+      <div class="sidebar-heading">Menu Principal</div>
+      
+      <button class="sidebar-nav-btn active" data-tab="membros">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M16 11C17.66 11 18.99 9.66 18.99 8C18.99 6.34 17.66 5 16 5C14.34 5 13 6.34 13 8C13 9.66 14.34 11 16 11M8 11C9.66 11 10.99 9.66 10.99 8C10.99 6.34 9.66 5 8 5C6.34 5 5 6.34 5 8C5 9.66 6.34 11 8 11M8 13C5.67 13 1 14.17 1 16.5V19H15V16.5C15 14.17 10.33 13 8 13M16 13C15.71 13 15.38 13.02 15.03 13.05C16.19 13.89 17 15.02 17 16.5V19H23V16.5C23 14.17 18.33 13 16 13Z"/>
+        </svg>
+        Membros
+      </button>
+
+      <button class="sidebar-nav-btn" data-tab="fechadura">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C9.24 2 7 4.24 7 7V10H6C4.89 10 4 10.89 4 12V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V12C20 10.89 19.11 10 18 10H17V7C17 4.24 14.76 2 12 2M12 4C13.66 4 15 5.34 15 7V10H9V7C9 5.34 10.34 4 12 4M12 14C13.1 14 14 14.9 14 16C14 16.74 13.6 17.38 13 17.72V19H11V17.72C10.4 17.38 10 16.74 10 16C10 14.9 10.9 14 12 14Z"/>
+        </svg>
+        Fechadura &amp; Trava
+      </button>
+
+      <button class="sidebar-nav-btn" data-tab="historico">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M13 3C8.03 3 4 7.03 4 12H1L4.89 15.89L4.96 16.03L9 12H6C6 8.13 9.13 5 13 5C16.87 5 20 8.13 20 12C20 15.87 16.87 19 13 19C11.07 19 9.32 18.21 8.06 16.94L6.64 18.36C8.27 20 10.5 21 13 21C17.97 21 22 16.97 22 12C22 7.03 17.97 3 13 3M12 8V13L16.28 15.54L17 14.33L13.5 12.25V8H12Z"/>
+        </svg>
+        Histórico de Acessos
+      </button>
+
+      <button class="sidebar-nav-btn" data-tab="sobre">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M11 18H13V16H11V18M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 17.52 2 12 2M12 20C7.59 20 4 16.41 4 12S7.59 4 12 4 20 7.59 20 12 16.41 20 12 20M12 6C9.79 6 8 7.79 8 10H10C10 8.9 10.9 8 12 8S14 8.9 14 10C14 12 11 11.75 11 15H13C13 12.75 16 12.5 16 10C16 7.79 14.21 6 12 6Z"/>
+        </svg>
+        Informações &amp; Modos
+      </button>
+
+      <div class="sidebar-footer">
+        <strong>GEAR Robótica</strong>
+        <span>Grupo de Estudos Avançados em Robótica &bull; UFMG</span>
+      </div>
+    </aside>
+
+    <!-- Conteúdo Principal -->
+    <main class="main-content">
+      <div class="main-container">
+
+        <!-- Banner de Contexto do Modo Operacional -->
+        <div id="mode-strip" class="mode-banner-strip producao">
+          <div id="mode-strip-text">
+            <strong>Modo Produção:</strong> Leitor e fechadura operando continuamente para liberação de membros cadastrados.
+          </div>
+          <button id="mode-strip-action-btn" class="btn-action-pill" onclick="setSystemMode('CADASTRO')">
+            Mudar para Modo Cadastro
+          </button>
+        </div>
+
+        <!-- Estatísticas Rápidas -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div>
+              <div class="stat-card-label">Total de Membros</div>
+              <div id="stat-total" class="stat-card-value">-</div>
+            </div>
+            <div class="stat-card-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16 11C17.66 11 18.99 9.66 18.99 8C18.99 6.34 17.66 5 16 5C14.34 5 13 6.34 13 8C13 9.66 14.34 11 16 11M8 11C9.66 11 10.99 9.66 10.99 8C10.99 6.34 9.66 5 8 5C6.34 5 5 6.34 5 8C5 9.66 6.34 11 8 11M8 13C5.67 13 1 14.17 1 16.5V19H15V16.5C15 14.17 10.33 13 8 13M16 13C15.71 13 15.38 13.02 15.03 13.05C16.19 13.89 17 15.02 17 16.5V19H23V16.5C23 14.17 18.33 13 16 13Z"/>
+              </svg>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div>
+              <div class="stat-card-label">Membros Ativos</div>
+              <div id="stat-active" class="stat-card-value" style="color: var(--color-success);">-</div>
+            </div>
+            <div class="stat-card-icon" style="color: var(--color-success);">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z"/>
+              </svg>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div>
+              <div class="stat-card-label">Estado da Porta</div>
+              <div id="stat-door-text" class="stat-card-value" style="font-size: 1.25rem;">Trancada</div>
+            </div>
+            <div id="stat-door-icon" class="stat-card-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C9.24 2 7 4.24 7 7V10H6C4.89 10 4 10.89 4 12V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V12C20 10.89 19.11 10 18 10H17V7C17 4.24 14.76 2 12 2M12 4C13.66 4 15 5.34 15 7V10H9V7C9 5.34 10.34 4 12 4M12 14C13.1 14 14 14.9 14 16C14 16.74 13.6 17.38 13 17.72V19H11V17.72C10.4 17.38 10 16.74 10 16C10 14.9 10.9 14 12 14Z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- ====================================================================
+             ABA 1: MEMBROS
+             ==================================================================== -->
+        <section id="pane-membros" class="tab-pane active">
+          <div class="card-panel">
+            <div class="panel-header">
+              <div class="panel-title-block">
+                <h2>Membros Cadastrados</h2>
+                <p>Controle de credenciais RFID e permissões de acesso ao laboratório</p>
+              </div>
+
+              <div class="panel-actions">
+                <div class="search-input-wrap">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5C16 11.11 15.41 12.59 14.44 13.73L14.71 14H15.5L20.5 19L19 20.5L14 15.5V14.71L13.73 14.44C12.59 15.41 11.11 16 9.5 16A6.5 6.5 0 0 1 3 9.5A6.5 6.5 0 0 1 9.5 3M9.5 5C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/>
+                  </svg>
+                  <input type="text" id="user-search-input" class="search-input" placeholder="Buscar membro por nome...">
+                </div>
+
+                <!-- Ações de Cadastro: visíveis SOMENTE em Modo Cadastro -->
+                <div id="cadastro-actions-group" class="cadastro-actions-group" style="display: none;">
+                  <button class="btn-secondary-gear" onclick="abrirModalCadastroManual()" title="Cadastrar membro informando o UID manualmente">
+                    📝 Cadastro Manual
+                  </button>
+                  <button class="btn-primary-gear" onclick="iniciarCadastroAutomatizado()" title="Assistente interativo: digite o nome e aproxime o cartão">
+                    ⚡ Cadastro Automatizado
+                  </button>
+                </div>
+
+                <!-- Em Modo Produção: banner sutil de que os cadastros ficam em espera -->
+                <div id="producao-mode-notice" class="producao-mode-notice">
+                  <span class="badge-status ativo"><span class="status-dot-sm"></span>Produção</span>
+                  <span style="font-size: 0.8rem; color: var(--gear-slate);">Ative o <strong>Modo Cadastro</strong> no topo para cadastrar novos membros.</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="gear-table">
+                <thead>
+                  <tr>
+                    <th style="width: 80px;">ID</th>
+                    <th>Nome Completo</th>
+                    <th style="width: 170px;">Cartão RFID (UID)</th>
+                    <th style="width: 120px;">Situação</th>
+                    <th style="width: 290px;">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="users-table-rows">
+                  <!-- Linhas renderizadas via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================================================================
+             ABA 2: FECHADURA & TRAVA
+             ==================================================================== -->
+        <section id="pane-fechadura" class="tab-pane">
+          <div class="door-control-grid">
+            
+            <!-- Card Principal da Porta -->
+            <div id="door-hero-card" class="door-hero-card">
+              <div class="door-circle-icon">
+                <svg id="door-lock-icon" viewBox="0 0 24 24">
+                  <path d="M12 2C9.24 2 7 4.24 7 7V10H6C4.89 10 4 10.89 4 12V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V12C20 10.89 19.11 10 18 10H17V7C17 4.24 14.76 2 12 2M12 4C13.66 4 15 5.34 15 7V10H9V7C9 5.34 10.34 4 12 4M12 14C13.1 14 14 14.9 14 16C14 16.74 13.6 17.38 13 17.72V19H11V17.72C10.4 17.38 10 16.74 10 16C10 14.9 10.9 14 12 14Z"/>
+                </svg>
+              </div>
+              <div id="door-hero-title" class="door-status-heading">Fechadura Trancada</div>
+              <div id="door-hero-caption" class="door-status-caption">Acesso bloqueado por segurança &bull; Relé inativo</div>
+
+              <button class="btn-large-unlock" onclick="triggerOpenDoor()">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                  <path d="M19 19V5C19 3.9 18.1 3 17 3H7C5.9 3 5 3.9 5 5V19H3V21H21V19H19M11 11H9V9H11V11M17 19H7V5H17V19Z"/>
+                </svg>
+                Destravar Fechadura Agora
+              </button>
+            </div>
+
+            <!-- Card de Verificação Rápida de Cartão -->
+            <div class="check-card-box">
+              <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="color: var(--gear-red);">
+                  <path d="M21 4H3C1.9 4 1 4.9 1 6V18C1 19.1 1.9 20 3 20H21C22.1 20 23 19.1 23 18V6C23 4.9 22.1 4 21 4M21 18H3V12H21V18M21 8H3V6H21V8Z"/>
+                </svg>
+                Verificar Cartão / Tag
+              </h3>
+              <p>Informe o código UID hexadecimal de um cartão para inspecionar permissão de acesso e cadastro vinculado:</p>
+
+              <div class="check-input-row">
+                <input type="text" id="check-card-input" placeholder="Ex: 04A1B2C3" maxlength="16">
+                <button class="btn-check-submit" onclick="checarCartao()">Verificar</button>
+              </div>
+
+              <div id="check-result-box" class="check-result-card"></div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ====================================================================
+             ABA 3: HISTÓRICO DE ACESSOS
+             ==================================================================== -->
+        <section id="pane-historico" class="tab-pane">
+          <div class="card-panel">
+            <div class="panel-header">
+              <div class="panel-title-block">
+                <h2>Histórico de Acessos</h2>
+                <p>Auditoria de entradas e tentativas registradas no banco de dados local</p>
+              </div>
+
+              <button class="btn-action-pill" onclick="fetchLogs()" style="padding: 7px 14px;">
+                🔄 Atualizar Lista
+              </button>
+            </div>
+
+            <div class="table-wrap">
+              <table class="gear-table">
+                <thead>
+                  <tr>
+                    <th style="width: 180px;">Data &amp; Hora</th>
+                    <th>Membro</th>
+                    <th style="width: 160px;">Cartão UID</th>
+                    <th style="width: 130px;">Resultado</th>
+                    <th>Motivo</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-table-rows">
+                  <!-- Linhas renderizadas via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================================================================
+             ABA 4: INFORMAÇÕES & MODOS
+             ==================================================================== -->
+        <section id="pane-sobre" class="tab-pane">
+          <div class="card-panel" style="padding: 28px;">
+            <div class="panel-title-block" style="margin-bottom: 20px;">
+              <h2>Arquitetura e Modos de Operação</h2>
+              <p>Sistema local da Porta GEAR desenvolvido pelo GEAR (Grupo de Estudos Avançados em Robótica - UFMG)</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px;">
+              <div style="background: var(--gear-surface); border: 1px solid var(--gear-line); border-radius: var(--radius-md); padding: 20px;">
+                <h4 style="color: var(--color-success); margin-bottom: 8px; font-weight: 700;">🛡️ Modo de Produção</h4>
+                <p style="font-size: 0.85rem; color: var(--gear-slate); line-height: 1.5;">
+                  Modo contínuo do sistema. O leitor PN532 na porta processa a aproximação de cartões para validar acesso no banco SQLite e acionar o relé da fechadura.
+                </p>
+              </div>
+
+              <div style="background: var(--gear-surface); border: 1px solid var(--gear-line); border-radius: var(--radius-md); padding: 20px;">
+                <h4 style="color: var(--gear-red); margin-bottom: 8px; font-weight: 700;">⚙️ Modo de Cadastro</h4>
+                <p style="font-size: 0.85rem; color: var(--gear-slate); line-height: 1.5;">
+                  Modo administrativo. O serviço da porta libera o leitor para que novos membros sejam cadastrados de forma manual ou automatizada sem disparar a fechadura.
+                </p>
+              </div>
+
+              <div style="background: var(--gear-surface); border: 1px solid var(--gear-line); border-radius: var(--radius-md); padding: 20px;">
+                <h4 style="color: var(--gear-charcoal); margin-bottom: 8px; font-weight: 700;">💾 Banco SQLite Local</h4>
+                <p style="font-size: 0.85rem; color: var(--gear-slate); line-height: 1.5;">
+                  Toda a autorização funciona sem conexão com a internet ou servidores externos. Dados armazenados em <code>data/access_control.sqlite3</code>.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ========================================================================
+       MODAIS
+       ======================================================================== -->
+
+  <!-- Modal 1: Cadastro Manual -->
+  <div id="modal-cadastro-manual" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h3>📝 Cadastro Manual de Membro</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-cadastro-manual')">&times;</button>
+      </div>
+      <form onsubmit="salvarCadastroManual(event)">
+        <div class="modal-content-body">
+          <div class="field-group">
+            <label for="manual-membro-id">ID do Membro *</label>
+            <input type="text" id="manual-membro-id" placeholder="Ex: 001, 002" required>
+            <span class="field-note">Identificador sequencial único do membro.</span>
+          </div>
+
+          <div class="field-group">
+            <label for="manual-membro-nome">Nome Completo *</label>
+            <input type="text" id="manual-membro-nome" placeholder="Ex: Lucas Ferreira" required>
+          </div>
+
+          <div class="field-group">
+            <label for="manual-membro-uid">UID do Cartão RFID (Hexadecimal) *</label>
+            <input type="text" id="manual-membro-uid" placeholder="Ex: 04A1B2C3" maxlength="16" required>
+            <span class="field-note">Informe os bytes hexadecimais da tag.</span>
+          </div>
+
+          <label class="field-checkbox-row">
+            <input type="checkbox" id="manual-membro-ativo" checked>
+            <span>Acesso liberado imediatamente</span>
+          </label>
+        </div>
+
+        <div class="modal-actions-foot">
+          <button type="button" class="btn-modal-cancel" onclick="closeModal('modal-cadastro-manual')">Cancelar</button>
+          <button type="submit" class="btn-primary-gear">Concluir Cadastro</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 2: Cadastro Automatizado (Wizard Passo a Passo estilo Terminal) -->
+  <div id="modal-cadastro-automatizado" class="modal-overlay">
+    <div class="modal-dialog" style="max-width: 500px;">
+      <div class="modal-head">
+        <h3>⚡ Cadastro Automatizado</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-cadastro-automatizado')">&times;</button>
+      </div>
+      
+      <div class="modal-content-body">
+        <!-- Indicador de Passos -->
+        <div class="wizard-progress-bar">
+          <div id="wiz-node-1" class="wizard-step-node active">
+            <div class="wizard-node-circle">1</div>
+            <div class="wizard-node-label">Nome</div>
+          </div>
+          <div style="flex: 1; height: 2px; background: var(--gear-line); margin: 0 8px;"></div>
+          <div id="wiz-node-2" class="wizard-step-node">
+            <div class="wizard-node-circle">2</div>
+            <div class="wizard-node-label">Leitura RFID</div>
+          </div>
+          <div style="flex: 1; height: 2px; background: var(--gear-line); margin: 0 8px;"></div>
+          <div id="wiz-node-3" class="wizard-step-node">
+            <div class="wizard-node-circle">3</div>
+            <div class="wizard-node-label">Conclusão</div>
+          </div>
+        </div>
+
+        <!-- Passo 1: Digitar Nome -->
+        <div id="wiz-step-1" class="wizard-step-panel active">
+          <div style="background: var(--gear-surface); padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--gear-line); font-size: 0.85rem; color: var(--gear-slate);">
+            ID sugerido automaticamente: <strong id="wiz-id-badge" class="badge-id" style="color: var(--gear-ink);">001</strong>
+          </div>
+
+          <div class="field-group">
+            <label for="wiz-input-nome">Digite o nome completo do membro *</label>
+            <input type="text" id="wiz-input-nome" placeholder="Ex: Lucas Ferreira" autofocus required>
+            <span class="field-note">Pressione Enter ou avance para a etapa de aproximação da tag.</span>
+          </div>
+
+          <div class="modal-actions-foot" style="padding: 0; background: transparent; border: none; margin-top: 8px;">
+            <button type="button" class="btn-modal-cancel" onclick="closeModal('modal-cadastro-automatizado')">Cancelar</button>
+            <button type="button" class="btn-primary-gear" onclick="wizardAvancarParaLeitura()">
+              Avançar para Leitura do Cartão &rarr;
+            </button>
+          </div>
+        </div>
+
+        <!-- Passo 2: Aproximação do Cartão no Leitor -->
+        <div id="wiz-step-2" class="wizard-step-panel">
+          <div style="background: var(--gear-surface); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--gear-line); font-size: 0.85rem;">
+            Membro: <strong id="wiz-display-nome">-</strong> &bull; ID: <strong id="wiz-display-id">-</strong>
+          </div>
+
+          <div class="rfid-scan-visual">
+            <div class="rfid-pulse-ring">
+              <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor">
+                <path d="M21 4H3C1.9 4 1 4.9 1 6V18C1 19.1 1.9 20 3 20H21C22.1 20 23 19.1 23 18V6C23 4.9 22.1 4 21 4M21 18H3V12H21V18M21 8H3V6H21V8Z"/>
+              </svg>
+            </div>
+            <strong style="font-size: 1.05rem; color: var(--gear-ink); margin-bottom: 4px;">Aproxime o Cartão no Leitor PN532</strong>
+            <span style="font-size: 0.82rem; color: var(--gear-slate); max-width: 320px;">
+              Aproxime a tag ou informe o UID no leitor para captura imediata:
+            </span>
+
+            <div style="margin-top: 14px; width: 100%; max-width: 260px;">
+              <input type="text" id="wiz-input-uid" placeholder="Aproxime ou digite UID..." maxlength="16" style="width: 100%; text-align: center; font-family: monospace; font-size: 1.05rem; letter-spacing: 0.08em; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--gear-line);">
+            </div>
+          </div>
+
+          <div class="modal-actions-foot" style="padding: 0; background: transparent; border: none;">
+            <button type="button" class="btn-modal-cancel" onclick="wizardVoltarPasso1()">&larr; Voltar</button>
+            <button type="button" class="btn-primary-gear" onclick="wizardConfirmarLeitura()">
+              Confirmar Leitura &amp; Cadastrar
+            </button>
+          </div>
+        </div>
+
+        <!-- Passo 3: Sucesso -->
+        <div id="wiz-step-3" class="wizard-step-panel">
+          <div style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 18px 0;">
+            <div style="width: 54px; height: 54px; border-radius: 50%; background: var(--color-success-bg); color: var(--color-success); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; margin-bottom: 12px;">
+              ✓
+            </div>
+            <h4 style="font-size: 1.15rem; font-weight: 800; color: var(--gear-ink); margin-bottom: 4px;">
+              Cadastro Concluído com Sucesso!
+            </h4>
+            <p style="font-size: 0.85rem; color: var(--gear-slate); margin-bottom: 16px;">
+              O membro e a credencial RFID foram registrados na base local da Porta GEAR.
+            </p>
+
+            <div style="width: 100%; background: var(--gear-surface); border: 1px solid var(--gear-line); border-radius: var(--radius-sm); padding: 14px; text-align: left; font-size: 0.88rem; display: flex; flex-direction: column; gap: 6px;">
+              <div><strong>Membro:</strong> <span id="wiz-resumo-nome">-</span></div>
+              <div><strong>ID Atribuído:</strong> <span id="wiz-resumo-id" class="badge-id">-</span></div>
+              <div><strong>Cartão RFID:</strong> <span id="wiz-resumo-uid" class="badge-uid">-</span></div>
+              <div><strong>Permissão:</strong> <span style="color: var(--color-success); font-weight: 700;">● Acesso Autorizado</span></div>
+            </div>
+          </div>
+
+          <div class="modal-actions-foot" style="padding: 0; background: transparent; border: none;">
+            <button type="button" class="btn-modal-cancel" onclick="iniciarCadastroAutomatizado()">
+              Cadastrar Outro Membro
+            </button>
+            <button type="button" class="btn-primary-gear" onclick="closeModal('modal-cadastro-automatizado')">
+              Concluir &amp; Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Trocar Cartão RFID -->
+  <div id="modal-trocar-cartao" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h3>Trocar Cartão RFID</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-trocar-cartao')">&times;</button>
+      </div>
+      <form onsubmit="salvarTrocaCartao(event)">
+        <div class="modal-content-body">
+          <input type="hidden" id="troca-cartao-user-id">
+
+          <div style="background: var(--gear-surface); padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--gear-line);">
+            <div style="font-size: 0.78rem; color: var(--gear-slate);">Membro:</div>
+            <strong id="troca-cartao-user-name" style="font-size: 0.95rem; color: var(--gear-ink);">-</strong>
+            <div style="font-size: 0.8rem; color: var(--gear-slate); margin-top: 4px;">
+              Cartão atual: <span id="troca-cartao-current-uid" class="badge-uid">-</span>
+            </div>
+          </div>
+
+          <div class="field-group" style="margin-top: 8px;">
+            <label for="troca-cartao-novo-uid">Novo Cartão RFID (UID) *</label>
+            <input type="text" id="troca-cartao-novo-uid" placeholder="Aproxime ou digite o novo UID" maxlength="16" required>
+            <span class="field-note">O novo cartão substituirá o anterior mantendo o cadastro e histórico do membro.</span>
+          </div>
+        </div>
+
+        <div class="modal-actions-foot">
+          <button type="button" class="btn-modal-cancel" onclick="closeModal('modal-trocar-cartao')">Cancelar</button>
+          <button type="submit" class="btn-primary-gear">Atualizar Cartão</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 4: Editar Nome -->
+  <div id="modal-editar-nome" class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-head">
+        <h3>Editar Nome do Membro</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-editar-nome')">&times;</button>
+      </div>
+      <form onsubmit="salvarEdicaoNome(event)">
+        <div class="modal-content-body">
+          <input type="hidden" id="edit-nome-user-id">
+
+          <div class="field-group">
+            <label>ID do Membro</label>
+            <input type="text" id="edit-nome-user-id-display" readonly style="opacity: 0.7; cursor: not-allowed;">
+          </div>
+
+          <div class="field-group">
+            <label for="edit-nome-valor">Nome Completo *</label>
+            <input type="text" id="edit-nome-valor" placeholder="Informe o nome corrigido" required>
+          </div>
+        </div>
+
+        <div class="modal-actions-foot">
+          <button type="button" class="btn-modal-cancel" onclick="closeModal('modal-editar-nome')">Cancelar</button>
+          <button type="submit" class="btn-primary-gear">Salvar Nome</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Prateleira de Notificações Toast -->
+  <div id="toast-shelf" class="toast-shelf"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

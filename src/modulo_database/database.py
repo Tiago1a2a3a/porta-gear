@@ -9,7 +9,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
+import hmac
 from pathlib import Path
+import secrets
 import sqlite3
 
 
@@ -103,8 +106,92 @@ class BancoAcesso:
 
                 CREATE INDEX IF NOT EXISTS idx_access_log_occurred_at
                     ON access_log (occurred_at DESC);
+
+                CREATE TABLE IF NOT EXISTS system_config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
+        self.inicializar_senha_admin()
+
+    def obter_config(self, chave: str, padrao: str | None = None) -> str | None:
+        """Obtém um valor de configuração do sistema."""
+        with self._sessao() as conexao:
+            linha = conexao.execute(
+                "SELECT value FROM system_config WHERE key = ?",
+                (chave,),
+            ).fetchone()
+            if linha is None:
+                return padrao
+            return linha["value"]
+
+    def gravar_config(self, chave: str, valor: str) -> None:
+        """Salva ou atualiza uma configuração do sistema."""
+        agora = _timestamp()
+        with self._sessao() as conexao:
+            conexao.execute(
+                """
+                INSERT INTO system_config (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (chave, valor, agora),
+            )
+
+    def _gerar_hash_senha(self, senha: str, salt: bytes) -> str:
+        """Gera hash PBKDF2-HMAC-SHA256 (100.000 iterações)."""
+        return hashlib.pbkdf2_hmac(
+            "sha256",
+            senha.encode("utf-8"),
+            salt,
+            100_000,
+        ).hex()
+
+    def inicializar_senha_admin(self, senha_padrao: str = "123456789") -> None:
+        """Garante que haja uma senha de administrador cadastrada no banco."""
+        salt_hex = self.obter_config("admin_password_salt")
+        hash_armazenado = self.obter_config("admin_password_hash")
+        if not salt_hex or not hash_armazenado:
+            self.definir_senha_admin(senha_padrao)
+
+    def definir_senha_admin(self, nova_senha: str) -> None:
+        """Define uma nova senha de administrador calculando novo salt e hash."""
+        nova_senha = (nova_senha or "").strip()
+        if len(nova_senha) < 4:
+            raise ErroDatabase("A senha de administrador deve ter no mínimo 4 caracteres.")
+
+        salt = secrets.token_bytes(16)
+        hash_hex = self._gerar_hash_senha(nova_senha, salt)
+        self.gravar_config("admin_password_salt", salt.hex())
+        self.gravar_config("admin_password_hash", hash_hex)
+
+    def verificar_senha_admin(self, senha: str) -> bool:
+        """Verifica se a senha fornecida confere com a gravada no banco."""
+        salt_hex = self.obter_config("admin_password_salt")
+        hash_armazenado = self.obter_config("admin_password_hash")
+
+        if not salt_hex or not hash_armazenado:
+            self.inicializar_senha_admin()
+            salt_hex = self.obter_config("admin_password_salt")
+            hash_armazenado = self.obter_config("admin_password_hash")
+
+        try:
+            salt = bytes.fromhex(salt_hex)
+            hash_calculado = self._gerar_hash_senha(senha, salt)
+            return hmac.compare_digest(hash_calculado, hash_armazenado)
+        except Exception:
+            return False
+
+    def alterar_senha_admin(self, senha_atual: str, nova_senha: str) -> bool:
+        """Altera a senha de administrador validando a senha atual."""
+        if not self.verificar_senha_admin(senha_atual):
+            raise ErroDatabase("A senha atual informada está incorreta.")
+        self.definir_senha_admin(nova_senha)
+        return True
 
     def adicionar_usuario(
         self,

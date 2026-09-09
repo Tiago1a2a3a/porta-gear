@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="100%" height="100%" fill="none">
+  <defs>
+    <linearGradient id="gearGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2e7d32"/>
+      <stop offset="50%" stop-color="#388e3c"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="innerGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#4caf50" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Engrenagem externa GEAR -->
+  <g filter="url(#glow)">
+    <path d="M 80 15 
+             L 86 28 A 56 56 0 0 1 101 34 L 114 26 
+             L 125 37 L 117 50 A 56 56 0 0 1 123 65 L 136 71 
+             L 136 89 L 123 95 A 56 56 0 0 1 117 110 L 125 123 
+             L 114 134 L 101 126 A 56 56 0 0 1 86 132 L 80 145 
+             L 64 145 L 58 132 A 56 56 0 0 1 43 126 L 30 134 
+             L 19 123 L 27 110 A 56 56 0 0 1 21 95 L 8 89 
+             L 8 71 L 21 65 A 56 56 0 0 1 27 50 L 19 37 
+             L 30 26 L 43 34 A 56 56 0 0 1 58 28 L 64 15 Z" 
+          fill="url(#gearGrad)" stroke="#4caf50" stroke-width="2" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Núcleo interno da engrenagem -->
+  <circle cx="80" cy="80" r="38" fill="url(#innerGrad)" stroke="#388e3c" stroke-width="3"/>
+
+  <!-- Mira óptica / Ícone VerLab (Visão Computacional e Robótica) -->
+  <circle cx="80" cy="80" r="24" stroke="#0ea5e9" stroke-width="2" stroke-dasharray="4 2"/>
+  <circle cx="80" cy="80" r="14" fill="#1b5e20" stroke="#4caf50" stroke-width="2"/>
+  
+  <!-- Linhas de retículo de visão -->
+  <line x1="80" y1="50" x2="80" y2="62" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="80" y1="98" x2="80" y2="110" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="50" y1="80" x2="62" y2="80" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="98" y1="80" x2="110" y2="80" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Ponto central de foco -->
+  <circle cx="80" cy="80" r="4.5" fill="#4ade80"/>
+</svg>
