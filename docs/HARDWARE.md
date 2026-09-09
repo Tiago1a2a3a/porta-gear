@@ -25,13 +25,10 @@ deve estar na posição correspondente ao modo SPI.
 | − | GND | — | conectado |
 | COM/NO/NC | circuito da fechadura | — | ainda não conectado |
 
-O código considera o módulo ativo em nível baixo:
+O código considera o módulo ativo em nível alto:
 
 ```text
-HIGH = relé desligado
-LOW  = relé acionado
+LOW  (0) = relé desligado (repouso)
+HIGH (1) = relé acionado (fechadura abre)
 ```
-
-Esse comportamento precisa ser confirmado fisicamente antes de conectar a
-carga definitiva da fechadura.
 

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Manual Operacional - Sistema Porta GEAR</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-right {
+      content: counter(page);
+    }
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.5;
+    font-size: 13px;
+    background: #ffffff;
+  }
+  h1, h2, h3, h4 {
+    color: #0f172a;
+    font-weight: 700;
+  }
+  .header {
+    border-bottom: 2px solid #2563eb;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+  .header h1 {
+    margin: 0 0 6px 0;
+    font-size: 24px;
+    color: #1e3a8a;
+  }
+  .header .sub {
+    font-size: 13px;
+    color: #64748b;
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge-blue { background: #dbeafe; color: #1d4ed8; }
+  .badge-green { background: #dcfce7; color: #15803d; }
+  .badge-amber { background: #fef3c7; color: #b45309; }
+
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 16px;
+    page-break-inside: avoid;
+  }
+  .card h3 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 15px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px 0;
+    font-size: 12px;
+    page-break-inside: avoid;
+  }
+  th {
+    background: #f1f5f9;
+    color: #334155;
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 2px solid #cbd5e1;
+    font-weight: 600;
+  }
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+  tr:nth-child(even) {
+    background: #fcfdfe;
+  }
+
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    border: 1px solid #e2e8f0;
+  }
+  pre {
+    font-family: Consolas, "Courier New", monospace;
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    overflow-x: auto;
+    margin: 8px 0;
+    page-break-inside: avoid;
+  }
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    border: none;
+  }
+
+  .alert {
+    border-left: 4px solid #2563eb;
+    background: #eff6ff;
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    margin: 12px 0;
+    font-size: 12.5px;
+    page-break-inside: avoid;
+  }
+  .alert-warning {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+  }
+  .alert-success {
+    border-left-color: #10b981;
+    background: #ecfdf5;
+  }
+
+  .grid-2 {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .grid-2 > div {
+    flex: 1;
+  }
+
+  .step-box {
+    display: flex;
+    margin-bottom: 10px;
+    align-items: flex-start;
+  }
+  .step-num {
+    background: #2563eb;
+    color: #fff;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 11px;
+    margin-right: 10px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .step-content {
+    flex: 1;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PORTA GEAR — Manual de Operação e Comandos</h1>
+  <div class="sub">
+    Controle de Acesso Local • Luckfox Pico Ultra (Linux Buildroot / RV1106) • Leitor PN532 SPI • Relé KY-019
+  </div>
+</div>
+
+<div class="alert alert-success">
+  <strong>Status Atual do Sistema:</strong> Banco de dados 100% limpo (virgem) e inicializado. O sistema opera de forma totalmente síncrona, robusta e bloqueante (sem concorrência frágil ou threads).
+</div>
+
+<h2>1. Entendendo os Modos de Operação</h2>
+<p>
+O leitor RFID/NFC <strong>Funduino PN532 V3</strong> é acessado via barramento SPI físico (<code>/dev/spidev0.0</code>). 
+Como o barramento SPI não permite que dois processos conversem com o leitor ao mesmo tempo, o sistema possui <strong>dois modos de trabalho</strong>:
+</p>
+
+<div class="grid-2">
+  <div class="card" style="border-top: 3px solid #16a34a;">
+    <h3><span class="badge badge-green">Modo Produção</span> (Padrão)</h3>
+    <p>O processo da porta (<code>executar</code>) mantém o leitor aberto e monitorando continuamente aproximações de cartões para liberar a fechadura.</p>
+    <ul>
+      <li><strong>Leitor:</strong> Ocupado monitorando a porta</li>
+      <li><strong>Porta:</strong> Abre automaticamente para tags cadastradas</li>
+      <li><strong>Comandos liberados:</strong> Consultas, listagens, ativações/remoções e histórico</li>
+      <li><strong>Comandos protegidos:</strong> <code>novo-usuario</code> e <code>trocar-cartao</code> ficam bloqueados para não haver conflito de hardware</li>
+    </ul>
+  </div>
+
+  <div class="card" style="border-top: 3px solid #f59e0b;">
+    <h3><span class="badge badge-amber">Modo Cadastro</span></h3>
+    <p>Modo administrativo para incluir novas pessoas ou trocar cartões no leitor sem precisar desligar a placa ou matar o sistema.</p>
+    <ul>
+      <li><strong>Leitor:</strong> Liberado pelo serviço principal</li>
+      <li><strong>Porta:</strong> Pausada temporariamente</li>
+      <li><strong>Comandos liberados:</strong> <strong>TODOS</strong>, incluindo <code>novo-usuario</code> e <code>trocar-cartao</code></li>
+      <li><strong>Retorno simples:</strong> Basta rodar <code>modo-producao</code> ao terminar</li>
+    </ul>
+  </div>
+</div>
+
+<h2>2. Como Alternar entre os Modos na Prática</h2>
+
+<div class="card">
+  <h3>Fluxo Recomendado com 2 Terminais (ou Janelas SSH / ADB)</h3>
+  
+  <div class="step-box">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <strong>Terminal 1 (Porta Rodando):</strong> Deixe o serviço da porta rodando em primeiro plano:
+      <pre><code>python3 main.py executar</code></pre>
+    </div>
+  </div>
+
+  <div class="step-box">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <strong>Terminal 2 (Administrador):</strong> Quando precisar cadastrar alguém, mude para cadastro:
+      <pre><code>python3 main.py modo-cadastro</code></pre>
+      <em>O Terminal 1 informará que o leitor foi liberado instantaneamente.</em>
+    </div>
+  </div>
+
+  <div class="step-box">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <strong>Terminal 2:</strong> Cadastre o novo usuário ou troque a tag:
+      <pre><code>python3 main.py novo-usuario</code></pre>
+    </div>
+  </div>
+
+  <div class="step-box">
+    <div class="step-num">4</div>
+    <div class="step-content">
+      <strong>Terminal 2:</strong> Volte o sistema para a produção normal:
+      <pre><code>python3 main.py modo-producao</code></pre>
+      <em>O Terminal 1 reabre o leitor e retoma o controle de acesso da porta.</em>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-warning">
+  <strong>Dica para uso com 1 terminal apenas:</strong> Você pode iniciar o serviço em segundo plano adicionando <code>&</code> ao final:
+  <br><code>python3 main.py executar &</code>
+  <br>Dessa forma, o seu terminal não fica preso e você pode digitar <code>modo-cadastro</code> e <code>modo-producao</code> diretamente na mesma janela.
+</div>
+
+<div class="page-break"></div>
+
+<h2>3. Tabela Completa de Comandos</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 28%;">Comando</th>
+      <th style="width: 18%;">Modo Requerido</th>
+      <th>Descrição e Exemplo de Uso</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>python3 main.py status</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Exibe modo atual, se o serviço da porta está ativo (com PID), estado do leitor (livre/ocupado) e quantidade de usuários.</td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py modo-cadastro</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Solicita que o serviço da porta libere o PN532 para permitir novos cadastros.</td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py modo-producao</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Reativa o leitor PN532 no serviço principal e retoma a liberação automática da porta.</td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py executar</code></td>
+      <td><span class="badge badge-green">Produção</span></td>
+      <td>Inicia o loop contínuo que lê as tags, valida no SQLite e aciona o relé (GPIO 52).</td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py novo-usuario</code></td>
+      <td><span class="badge badge-amber">Cadastro</span></td>
+      <td>
+        Assistente interativo. Pede o nome, gera o próximo ID (ex: <code>001</code>) e lê a tag no leitor.<br>
+        <code>python3 main.py novo-usuario --nome "Tiago Silva"</code>
+      </td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py trocar-cartao</code><br><em>(alias: <code>novo-cartao</code>)</em></td>
+      <td><span class="badge badge-amber">Cadastro</span></td>
+      <td>
+        Substitui o cartão de um usuário existente.<br>
+        <code>python3 main.py trocar-cartao --id 001</code><br>
+        <code>python3 main.py trocar-cartao --nome "Tiago"</code>
+      </td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py listar-usuarios</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Lista todos os usuários com ID, Nome, UID do cartão e estado (ativo/inativo).</td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py ativar-usuario</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Reativa o acesso de um usuário suspenso: <code>--id 001</code></td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py desativar-usuario</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Bloqueia o acesso sem apagar a pessoa do histórico: <code>--id 001</code></td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py remover-usuario</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Desativa, renomeia com sufixo <code>-exl</code> e libera o cartão para uso futuro: <code>--id 001</code></td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py alterar-usuario</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Altera nome ou estado de um usuário: <code>--id 001 --nome "Novo Nome"</code></td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py cadastrar-usuario</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Cadastro manual direto por parâmetros (sem usar o leitor):<br><code>--id 001 --nome "Ana" --uid AABBCCDD</code></td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py registros</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Exibe os acessos recentes com data, hora, ID, nome e se foi autorizado ou negado.<br><code>python3 main.py registros --limite 20</code></td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py abrir-porta</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Aciona o relé da fechadura manualmente via terminal.</td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py ler-cartao</code></td>
+      <td><span class="badge badge-amber">Cadastro</span></td>
+      <td>Lê uma tag avulsa no PN532 para teste ou identificação de UID.</td>
+    </tr>
+    <tr>
+      <td><code>python3 main.py inicializar-banco</code></td>
+      <td><span class="badge badge-blue">Qualquer</span></td>
+      <td>Cria a estrutura de tabelas SQLite caso o arquivo de banco seja recriado.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>4. Resumo de Hardware e Configuração Física</h2>
+<div class="card">
+  <ul style="margin: 0; padding-left: 20px;">
+    <li><strong>Placa controladora:</strong> Luckfox Pico Ultra (Rockchip RV1106G3, Linux Buildroot).</li>
+    <li><strong>Leitor RFID:</strong> Funduino PN532 V3 em modo SPI (DIP Switch 1=ON, 2=OFF). Conectado em <code>/dev/spidev0.0</code> a 500 kHz.</li>
+    <li><strong>Relé da Fechadura:</strong> Módulo Relé KY-019 acionado pelo pino <strong>GPIO 52</strong> (ativo alto: nível 1 liga relé e destrava a fechadura por 1 segundo).</li>
+    <li><strong>Banco de Dados Local:</strong> SQLite armazenado em <code>/root/Projeto_tiago/data/access_control.sqlite3</code> com integridade referencial e auditoria completa.</li>
+  </ul>
+</div>
+
+</body>
+</html>

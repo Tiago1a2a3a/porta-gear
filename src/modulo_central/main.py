@@ -11,6 +11,7 @@ from src.modulo_central.comandos_terminal import (
 from src.modulo_central.funcoes_auxiliares import (
     configuracao_sistema_pelos_argumentos,
 )
+from src.modulo_central.gestor_modo import ErroModoBloqueado
 from src.modulo_central.loop_sistema import executar_loop
 from src.modulo_central.setup_sistema import setup_sistema
 from src.modulo_database.database import ErroDatabase
@@ -32,7 +33,7 @@ def main(argumentos: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nSistema encerrado pelo operador.")
         return 0
-    except (ErroDatabase, ErroLeitor, ErroRele, ValueError) as erro:
+    except (ErroDatabase, ErroLeitor, ErroRele, ErroModoBloqueado, ValueError) as erro:
         print(f"Erro: {erro}", file=sys.stderr)
         return 2
 

@@ -13,7 +13,7 @@ central pode importar os três e coordenar o fluxo.
 ## Módulo do relé
 
 - `setup_rele.py`: cria o objeto, exporta o GPIO52, configura como saída e deixa
-  o relé desligado em nível `HIGH`.
+  o relé desligado em nível `LOW` (0).
 - `rele.py`: contém a configuração dos pulsos e `ReleLuckfox.abrir_porta()`.
 
 ## Módulo do leitor

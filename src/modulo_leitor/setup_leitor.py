@@ -28,6 +28,11 @@ def setup_leitor(
             "Compile-o com: make -C src/modulo_leitor/nativo"
         )
     if not os.access(caminho, os.X_OK):
+        try:
+            caminho.chmod(caminho.stat().st_mode | 0o755)
+        except OSError:
+            pass
+    if not os.access(caminho, os.X_OK):
         raise ErroLeitor(f"O leitor nativo não possui permissão de execução: {caminho}")
 
     try:

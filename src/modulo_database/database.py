@@ -218,6 +218,22 @@ class BancoAcesso:
             raise ErroDatabase("Usuário não encontrado após a alteração.")
         return usuario
 
+    def proximo_id_disponivel(self) -> str:
+        """Calcula o próximo ID sequencial formatado com 3 dígitos (ex: 001, 002...)."""
+        with self._sessao() as conexao:
+            linhas = conexao.execute("SELECT user_id FROM users").fetchall()
+
+        ids_numericos: list[int] = []
+        for linha in linhas:
+            uid_str = str(linha["user_id"]).strip()
+            try:
+                ids_numericos.append(int(uid_str))
+            except ValueError:
+                pass
+
+        proximo = max(ids_numericos, default=0) + 1
+        return f"{proximo:03d}"
+
     def buscar_usuario_por_id(self, id_usuario: str) -> Usuario | None:
         """Procura um cadastro pelo ID do usuário."""
         with self._sessao() as conexao:
@@ -230,6 +246,23 @@ class BancoAcesso:
                 (id_usuario,),
             ).fetchone()
         return _usuario_da_linha(linha) if linha is not None else None
+
+    def buscar_usuarios_por_nome(self, nome: str) -> list[Usuario]:
+        """Busca usuários ativos ou inativos pelo nome aproximado."""
+        termo = nome.strip()
+        if not termo:
+            return []
+        with self._sessao() as conexao:
+            linhas = conexao.execute(
+                """
+                SELECT user_id, name, card_uid, is_active
+                FROM users
+                WHERE name LIKE ? AND name NOT LIKE '%-exl'
+                ORDER BY user_id ASC
+                """,
+                (f"%{termo}%",),
+            ).fetchall()
+        return [_usuario_da_linha(linha) for linha in linhas]
 
     def definir_usuario_ativo(self, id_usuario: str, ativo: bool) -> bool:
         """Ativa ou desativa um cadastro."""
@@ -245,11 +278,21 @@ class BancoAcesso:
         return cursor.rowcount == 1
 
     def remover_usuario(self, id_usuario: str) -> bool:
-        """Remove um cadastro pelo ID."""
+        """Marca o usuário como removido no banco, mantendo seu histórico com o sufixo -exl."""
+        usuario = self.buscar_usuario_por_id(id_usuario)
+        if usuario is None or usuario.nome.endswith("-exl"):
+            return False
+
+        novo_nome = f"{usuario.nome}-exl"
+        novo_uid = f"{usuario.uid_cartao}-EXL-{id_usuario}"
         with self._sessao() as conexao:
             cursor = conexao.execute(
-                "DELETE FROM users WHERE user_id = ?",
-                (id_usuario,),
+                """
+                UPDATE users
+                SET name = ?, card_uid = ?, is_active = 0, updated_at = ?
+                WHERE user_id = ?
+                """,
+                (novo_nome, novo_uid, _timestamp(), id_usuario),
             )
         return cursor.rowcount == 1
 
@@ -302,16 +345,24 @@ class BancoAcesso:
             )
 
     def acessos_recentes(self, limite: int = 20) -> list[sqlite3.Row]:
-        """Retorna os registros mais recentes."""
+        """Retorna os registros mais recentes com nome do usuário quando cadastrado."""
         if limite < 1:
             raise ErroDatabase("O limite de registros deve ser maior que zero.")
 
         with self._sessao() as conexao:
             return conexao.execute(
                 """
-                SELECT id, user_id, card_uid, granted, reason, occurred_at
-                FROM access_log
-                ORDER BY id DESC
+                SELECT
+                    a.id,
+                    a.user_id,
+                    u.name AS user_name,
+                    a.card_uid,
+                    a.granted,
+                    a.reason,
+                    a.occurred_at
+                FROM access_log a
+                LEFT JOIN users u ON a.user_id = u.user_id
+                ORDER BY a.id DESC
                 LIMIT ?
                 """,
                 (limite,),

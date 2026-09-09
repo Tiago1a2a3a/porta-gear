@@ -17,9 +17,9 @@ from src.modulo_rele.setup_rele import setup_rele
 class ConfiguracaoSistema:
     caminho_database: Path = CAMINHO_DATABASE_PADRAO
     numero_gpio_rele: int = 52
-    quantidade_pulsos: int = 1
-    tempo_rele_ligado: float = 1.0
-    tempo_rele_desligado: float = 0.0
+    quantidade_pulsos: int = 3
+    tempo_rele_ligado: float = 0.8
+    tempo_rele_desligado: float = 0.4
     executavel_leitor: Path = EXECUTAVEL_PADRAO
     timeout_setup_leitor: float = 10.0
 
@@ -29,6 +29,7 @@ class Sistema:
     database: BancoAcesso
     leitor: LeitorPN532
     rele: ReleLuckfox
+    configuracao: ConfiguracaoSistema | None = None
 
 
 def setup_sistema(configuracao: ConfiguracaoSistema) -> Sistema:
@@ -56,4 +57,5 @@ def setup_sistema(configuracao: ConfiguracaoSistema) -> Sistema:
         database=database,
         leitor=leitor,
         rele=rele,
+        configuracao=configuracao,
     )

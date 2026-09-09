@@ -75,7 +75,8 @@ def mostrar_registros(registros) -> None:
     for registro in registros:
         estado = "AUTORIZADO" if registro["granted"] else "NEGADO"
         id_usuario = registro["user_id"] or "-"
+        nome_usuario = registro["user_name"] if "user_name" in registro.keys() and registro["user_name"] else "-"
         print(
-            f"{registro['occurred_at']} | {estado} | {id_usuario} | "
+            f"{registro['occurred_at']} | {estado} | {id_usuario} | {nome_usuario} | "
             f"{registro['card_uid']} | {registro['reason']}"
         )

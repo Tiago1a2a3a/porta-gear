@@ -1,11 +1,11 @@
-"""Comunicação com o processo persistente que mantém o PN532 aberto."""
+"""Comunicação com o processo persistente que mantém o PN532 aberto de forma bloqueante."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from queue import Empty, Queue
+import select
 import subprocess
-from threading import Thread
+import sys
 import time
 
 from src.modulo_database.database import ErroDatabase, normalizar_uid
@@ -15,32 +15,17 @@ class ErroLeitor(Exception):
     """Erro de instalação, comunicação ou resposta do leitor."""
 
 
-_FIM_DA_SAIDA = object()
-
-
 class LeitorPN532:
-    """Representa uma única conexão persistente com o PN532."""
+    """Representa uma única conexão persistente e bloqueante com o PN532."""
 
     def __init__(self, processo: subprocess.Popen[str], executavel: Path):
         self._processo = processo
         self.executavel = executavel
         self.nome_dispositivo: str | None = None
-        self._linhas: Queue[str | object] = Queue()
-        self._thread_saida = Thread(
-            target=self._receber_saida,
-            name="saida-leitor-pn532",
-            daemon=True,
-        )
-        self._thread_saida.start()
 
     def aguardar_pronto(self, timeout_segundos: float = 10.0) -> None:
         """Espera a confirmação de que libnfc e PN532 foram inicializados."""
-        linha = self._ler_linha(timeout_segundos)
-        if linha is None:
-            self.encerrar()
-            raise ErroLeitor(
-                "O leitor não confirmou a inicialização dentro do tempo esperado."
-            )
+        linha = self._ler_linha()
         if not linha.startswith("READY "):
             detalhe = self._detalhe_erro(linha)
             self.encerrar()
@@ -49,22 +34,21 @@ class LeitorPN532:
         self.nome_dispositivo = linha.removeprefix("READY ").strip()
 
     def ler(self, timeout_segundos: float | None = None) -> str | None:
-        """Aguarda o próximo cartão sem reinicializar o PN532.
-
-        Sem timeout, a chamada fica bloqueada até um cartão ser aproximado. Com
-        timeout, retorna ``None`` quando nenhum UID chegar no período informado.
-        """
-        prazo = (
-            None
-            if timeout_segundos is None
-            else time.monotonic() + timeout_segundos
-        )
+        """Aguarda o próximo cartão sem reinicializar o PN532 (chamada bloqueante)."""
+        tempo_limite = time.time() + timeout_segundos if timeout_segundos is not None else None
 
         while True:
-            restante = None if prazo is None else max(0.0, prazo - time.monotonic())
-            linha = self._ler_linha(restante)
+            if timeout_segundos is not None:
+                restante = tempo_limite - time.time()
+                if restante <= 0:
+                    return None
+                if sys.platform != "win32" and self._processo.stdout is not None:
+                    prontos, _, _ = select.select([self._processo.stdout], [], [], max(0.0, restante))
+                    if not prontos:
+                        return None
 
-            if linha is None:
+            linha = self._ler_linha()
+            if not linha:
                 return None
             if linha.startswith("UID "):
                 try:
@@ -83,42 +67,24 @@ class LeitorPN532:
 
         self._processo.terminate()
         try:
-            self._processo.wait(timeout=3.0)
+            self._processo.wait(timeout=2.0)
         except subprocess.TimeoutExpired:
             self._processo.kill()
             self._processo.wait(timeout=1.0)
-        self._thread_saida.join(timeout=1.0)
 
-    def _ler_linha(self, timeout_segundos: float | None) -> str | None:
-        if timeout_segundos is not None and timeout_segundos < 0:
-            raise ValueError("O timeout de leitura não pode ser negativo.")
+    def _ler_linha(self) -> str:
+        if self._processo.stdout is None:
+            raise ErroLeitor("O processo do leitor não possui stdout disponível.")
 
-        try:
-            item = self._linhas.get(timeout=timeout_segundos)
-        except Empty:
-            return None
-
-        if item is not _FIM_DA_SAIDA:
-            return str(item)
-
-        codigo = self._processo.poll()
-        detalhe = self._detalhe_erro("")
-        raise ErroLeitor(
-            f"O leitor persistente foi encerrado"
-            f"{f' com código {codigo}' if codigo is not None else ''}. {detalhe}"
-        )
-
-    def _receber_saida(self) -> None:
-        stdout = self._processo.stdout
-        if stdout is None:
-            self._linhas.put(_FIM_DA_SAIDA)
-            return
-
-        for linha in stdout:
-            linha = linha.strip()
-            if linha:
-                self._linhas.put(linha)
-        self._linhas.put(_FIM_DA_SAIDA)
+        linha = self._processo.stdout.readline()
+        if not linha:
+            codigo = self._processo.poll()
+            detalhe = self._detalhe_erro("")
+            raise ErroLeitor(
+                f"O leitor persistente foi encerrado"
+                f"{f' com código {codigo}' if codigo is not None else ''}. {detalhe}"
+            )
+        return linha.strip()
 
     def _detalhe_erro(self, alternativa: str) -> str:
         stderr = self._processo.stderr
