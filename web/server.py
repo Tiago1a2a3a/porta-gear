@@ -36,6 +36,10 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
 
     servicos: ServicosPorta
 
+    def address_string(self):
+        # Retorna o IP direto evitando timeout de DNS reverso (getfqdn)
+        return self.client_address[0]
+
     def log_message(self, format, *args):
         # Log limpo e legível no console
         sys.stdout.write(f"[{time.strftime('%H:%M:%S')}] {self.address_string()} - {format % args}\n")
