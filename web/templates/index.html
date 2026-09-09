@@ -201,7 +201,20 @@
                 <p>Controle de credenciais RFID e permissões de acesso ao laboratório</p>
               </div>
 
-              <div class="panel-actions">
+              <div class="panel-actions" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                <!-- Filtros de Status (Todos / Ativos / Inativos) -->
+                <div class="filter-pills-group" style="display: flex; gap: 6px; align-items: center;">
+                  <button type="button" class="btn-filter-pill active" id="filter-btn-todos" onclick="setFiltroMembros('todos')">
+                    Todos (<span id="count-membros-todos">0</span>)
+                  </button>
+                  <button type="button" class="btn-filter-pill" id="filter-btn-ativos" onclick="setFiltroMembros('ativos')">
+                    Ativos (<span id="count-membros-ativos">0</span>)
+                  </button>
+                  <button type="button" class="btn-filter-pill" id="filter-btn-inativos" onclick="setFiltroMembros('inativos')">
+                    Inativos (<span id="count-membros-inativos">0</span>)
+                  </button>
+                </div>
+
                 <div class="search-input-wrap">
                   <svg viewBox="0 0 24 24" fill="currentColor">
                     <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5C16 11.11 15.41 12.59 14.44 13.73L14.71 14H15.5L20.5 19L19 20.5L14 15.5V14.71L13.73 14.44C12.59 15.41 11.11 16 9.5 16A6.5 6.5 0 0 1 3 9.5A6.5 6.5 0 0 1 9.5 3M9.5 5C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/>
@@ -280,10 +293,14 @@
               </h3>
               <p>Informe o código UID hexadecimal de um cartão para inspecionar permissão de acesso e cadastro vinculado:</p>
 
-              <div class="check-input-row">
-                <input type="text" id="check-card-input" placeholder="Ex: 04A1B2C3" maxlength="16">
-                <button class="btn-check-submit" onclick="checarCartao()">Verificar</button>
+              <div class="check-input-row" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <input type="text" id="check-card-input" placeholder="Ex: 04A1B2C3" maxlength="16" style="flex: 1; min-width: 140px;">
+                <button type="button" class="btn-check-submit" id="btn-ler-check-card" onclick="capturarTagParaCheck()" title="Aproxime a tag física no leitor PN532" style="background: var(--gear-surface); color: var(--gear-ink); border: 1px solid var(--gear-line); white-space: nowrap;">
+                  📡 Ler Cartão
+                </button>
+                <button type="button" class="btn-check-submit" onclick="checarCartao()">Verificar</button>
               </div>
+              <div id="check-card-feedback" style="font-size: 0.82rem; margin-top: 6px; min-height: 18px; color: var(--gear-blue);"></div>
 
               <div id="check-result-box" class="check-result-card"></div>
             </div>
@@ -302,9 +319,22 @@
                 <p>Auditoria de entradas e tentativas registradas no banco de dados local</p>
               </div>
 
-              <button class="btn-action-pill" onclick="fetchLogs()" style="padding: 7px 14px;">
-                🔄 Atualizar Lista
-              </button>
+              <div class="panel-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <div class="search-input-wrap">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9.5 3A6.5 6.5 0 0 1 16 9.5C16 11.11 15.41 12.59 14.44 13.73L14.71 14H15.5L20.5 19L19 20.5L14 15.5V14.71L13.73 14.44C12.59 15.41 11.11 16 9.5 16A6.5 6.5 0 0 1 3 9.5A6.5 6.5 0 0 1 9.5 3M9.5 5C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/>
+                  </svg>
+                  <input type="text" id="log-search-input" class="search-input" placeholder="Buscar por membro ou tag..." oninput="onLogSearchInput()">
+                </div>
+
+                <button class="btn-action-pill" onclick="baixarLogsCSV()" title="Baixar histórico completo em formato CSV" style="padding: 7px 14px; background: #16a34a; color: #ffffff; border: none;">
+                  📥 Baixar Logs (CSV)
+                </button>
+
+                <button class="btn-action-pill" onclick="fetchLogs()" style="padding: 7px 14px;" title="Recarregar histórico">
+                  🔄 Atualizar
+                </button>
+              </div>
             </div>
 
             <div class="table-wrap">
@@ -322,6 +352,20 @@
                   <!-- Linhas renderizadas via JS -->
                 </tbody>
               </table>
+            </div>
+
+            <!-- Paginação do Histórico de Acessos (20 por página, máx. 3 páginas) -->
+            <div id="logs-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-top: 1px solid var(--gear-line); font-size: 0.85rem; color: var(--gear-slate); background: var(--gear-surface); border-radius: 0 0 var(--radius-md) var(--radius-md);">
+              <span id="log-pagination-info">Mostrando 0-0 de 0</span>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button type="button" class="btn-action-pill" id="btn-log-prev" onclick="mudarPaginaLogs(-1)" disabled style="padding: 5px 12px;">
+                  &larr; Anterior
+                </button>
+                <span id="log-page-current" style="font-weight: 700; color: var(--gear-ink);">Página 1 de 1</span>
+                <button type="button" class="btn-action-pill" id="btn-log-next" onclick="mudarPaginaLogs(1)" disabled style="padding: 5px 12px;">
+                  Próxima &rarr;
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -391,8 +435,14 @@
 
           <div class="field-group">
             <label for="manual-membro-uid">UID do Cartão RFID (Hexadecimal) *</label>
-            <input type="text" id="manual-membro-uid" placeholder="Ex: 04A1B2C3" maxlength="16" required>
-            <span class="field-note">Informe os bytes hexadecimais da tag.</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="text" id="manual-membro-uid" placeholder="Ex: 04A1B2C3" maxlength="16" required style="flex: 1;">
+              <button type="button" class="btn-check-submit" id="btn-manual-ler" onclick="capturarTagParaManual()" title="Aproxime a tag física no leitor" style="background: var(--gear-surface); color: var(--gear-ink); border: 1px solid var(--gear-line); white-space: nowrap;">
+                📡 Ler Tag
+              </button>
+            </div>
+            <div id="manual-membro-feedback" style="font-size: 0.82rem; margin-top: 4px; min-height: 18px; color: var(--gear-blue);"></div>
+            <span class="field-note">Informe os bytes hexadecimais da tag ou capture do leitor.</span>
           </div>
 
           <label class="field-checkbox-row">
@@ -473,8 +523,14 @@
               Aproxime a tag ou informe o UID no leitor para captura imediata:
             </span>
 
-            <div style="margin-top: 14px; width: 100%; max-width: 260px;">
-              <input type="text" id="wiz-input-uid" placeholder="Aproxime ou digite UID..." maxlength="16" style="width: 100%; text-align: center; font-family: monospace; font-size: 1.05rem; letter-spacing: 0.08em; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--gear-line);">
+            <div style="margin-top: 14px; width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+              <div style="display: flex; gap: 8px; width: 100%;">
+                <input type="text" id="wiz-input-uid" placeholder="Aproxime ou digite UID..." maxlength="16" style="flex: 1; text-align: center; font-family: monospace; font-size: 1.05rem; letter-spacing: 0.08em; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--gear-line);">
+                <button type="button" class="btn-check-submit" id="btn-wiz-ler" onclick="capturarTagParaWizard()" title="Aproxime o cartão físico no leitor" style="background: var(--gear-surface); color: var(--gear-ink); border: 1px solid var(--gear-line); white-space: nowrap;">
+                  📡 Ler Cartão
+                </button>
+              </div>
+              <div id="wiz-scan-feedback" style="font-size: 0.82rem; color: var(--gear-blue); min-height: 18px;"></div>
             </div>
           </div>
 
@@ -541,7 +597,13 @@
 
           <div class="field-group" style="margin-top: 8px;">
             <label for="troca-cartao-novo-uid">Novo Cartão RFID (UID) *</label>
-            <input type="text" id="troca-cartao-novo-uid" placeholder="Aproxime ou digite o novo UID" maxlength="16" required>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="text" id="troca-cartao-novo-uid" placeholder="Aproxime ou digite o novo UID" maxlength="16" required style="flex: 1;">
+              <button type="button" class="btn-check-submit" id="btn-troca-ler" onclick="capturarTagParaTroca()" title="Aproxime o novo cartão no leitor PN532" style="background: var(--gear-surface); color: var(--gear-ink); border: 1px solid var(--gear-line); white-space: nowrap;">
+                📡 Ler do Leitor
+              </button>
+            </div>
+            <div id="troca-cartao-feedback" style="font-size: 0.82rem; margin-top: 4px; min-height: 18px; color: var(--gear-blue);"></div>
             <span class="field-note">O novo cartão substituirá o anterior mantendo o cadastro e histórico do membro.</span>
           </div>
         </div>

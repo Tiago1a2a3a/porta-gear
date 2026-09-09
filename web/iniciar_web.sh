@@ -6,4 +6,4 @@ echo "========================================================"
 echo "  Iniciando Painel Web de Comando - Porta GEAR"
 echo "  Tema: GEAR / VerLab (UFMG)"
 echo "========================================================"
-python3 server.py --porta 8088
+python3 server.py --porta 80

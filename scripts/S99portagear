@@ -1,0 +1,100 @@
+#!/bin/sh
+#
+# S99portagear - Inicializacao automatica do Sistema Porta GEAR
+# Inicia tanto o Servidor Web (porta 80) quanto o Servico do Leitor PN532
+#
+
+PROJETO_DIR="/root/Projeto_tiago"
+WEB_PID="/var/run/portagear_web.pid"
+LOOP_PID="/var/run/portagear_loop.pid"
+WEB_LOG="/var/log/portagear_web.log"
+LOOP_LOG="/var/log/portagear_loop.log"
+
+start() {
+    printf "Iniciando Sistema Porta GEAR: "
+
+    if [ ! -d "$PROJETO_DIR" ]; then
+        echo "DIRETORIO $PROJETO_DIR NAO ENCONTRADO"
+        return 1
+    fi
+
+    # Garante eth0 com o IP padrao
+    if ! ifconfig eth0 | grep -q "192.168.10.1"; then
+        ifconfig eth0 192.168.10.1 netmask 255.255.255.0 up 2>/dev/null
+    fi
+
+    cd "$PROJETO_DIR"
+
+    # 1. Inicia Servidor Web se nao estiver rodando
+    if ! pgrep -f "web/server.py" >/dev/null 2>&1; then
+        nohup /usr/bin/python3 -u web/server.py --porta 80 < /dev/null > "$WEB_LOG" 2>&1 &
+        echo $! > "$WEB_PID"
+    fi
+
+    # 2. Inicia Servico do Leitor PN532 se nao estiver rodando
+    if ! pgrep -f "main.py executar" >/dev/null 2>&1; then
+        nohup /usr/bin/python3 -u main.py executar < /dev/null > "$LOOP_LOG" 2>&1 &
+        echo $! > "$LOOP_PID"
+    fi
+
+    echo "OK"
+}
+
+stop() {
+    printf "Parando Sistema Porta GEAR: "
+    pkill -f "main.py executar" 2>/dev/null
+    pkill -f "leitor_pn532" 2>/dev/null
+    pkill -f "web/server.py" 2>/dev/null
+    rm -f "$WEB_PID" "$LOOP_PID"
+
+    # Aguarda processos encerrarem completamente
+    for i in 1 2 3 4 5; do
+        if ! pgrep -f "main.py executar" >/dev/null 2>&1 && ! pgrep -f "web/server.py" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+    echo "OK"
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
+
+status() {
+    web_ok=0
+    loop_ok=0
+    if pgrep -f "web/server.py" >/dev/null 2>&1; then web_ok=1; fi
+    if pgrep -f "main.py executar" >/dev/null 2>&1; then loop_ok=1; fi
+
+    if [ $web_ok -eq 1 ] && [ $loop_ok -eq 1 ]; then
+        echo "Sistema Porta GEAR: WEB e LEITOR PN532 estao RODANDO."
+    elif [ $web_ok -eq 1 ]; then
+        echo "Sistema Porta GEAR: Apenas WEB esta RODANDO (LEITOR PARADO)."
+    else
+        echo "Sistema Porta GEAR: PARADO."
+    fi
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    status)
+        status
+        ;;
+    *)
+        echo "Uso: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit 0

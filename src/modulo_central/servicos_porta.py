@@ -437,10 +437,10 @@ class ServicosPorta:
             },
         }
 
-    def obter_registros(self, limite: int = 30) -> list[dict[str, Any]]:
-        """Retorna os registros de acesso mais recentes."""
+    def obter_registros(self, limite: int = 60, busca: str | None = None) -> list[dict[str, Any]]:
+        """Retorna os registros de acesso mais recentes, com filtro opcional por termo de busca."""
         registros = self.database.acessos_recentes(limite=limite)
-        return [
+        lista = [
             {
                 "id": r["id"],
                 "usuario_id": r["user_id"],
@@ -452,6 +452,15 @@ class ServicosPorta:
             }
             for r in registros
         ]
+        if busca:
+            termo = busca.strip().lower()
+            lista = [
+                r for r in lista
+                if (r["usuario_nome"] and termo in r["usuario_nome"].lower())
+                or (r["uid_cartao"] and termo in r["uid_cartao"].lower())
+                or (r["usuario_id"] and termo in r["usuario_id"].lower())
+            ]
+        return lista
 
     # -------------------------------------------------------------------------
     # 4. OPERAÇÕES DE LEITURA E IDENTIFICAÇÃO DE TAG RFID
@@ -478,10 +487,10 @@ class ServicosPorta:
                 "mensagem": f"Tag {uid_norm} capturada no Modo Cadastro.",
             }
 
-        # Em modo produção: valida credencial e autoriza abertura se válido
+        # Em modo produção: valida autorização no banco e abre a fechadura
         decisao = self.database.verificar_acesso(uid_norm)
         if decisao.autorizado:
-            self.abrir_porta(origem=f"TAG_{uid_norm}", acionar_hardware=True)
+            self.abrir_porta(origem="RFID")
 
         return {
             "sucesso": True,
@@ -498,16 +507,27 @@ class ServicosPorta:
     def capturar_tag_leitor_hardware(self, timeout: float = 30.0) -> str:
         """Realiza a leitura direta de uma tag no leitor PN532 físico.
 
-        Requer que o sistema esteja em MODO_CADASTRO para não colidir com o serviço
-        da porta, e que esteja em ambiente Linux com o binário nativo.
+        Alterna com segurança e temporariamente para MODO_CADASTRO caso o serviço
+        da porta esteja ativo em segundo plano, liberando o barramento SPI.
+        Ao final da leitura (ou timeout/erro), restaura o modo anterior.
         """
-        self.gestor_modo.validar_permissao_leitor("capturar_tag")
+        modo_original = self.gestor_modo.obter_modo_atual()
+        trocou_modo = False
 
-        leitor = setup_leitor(executavel=self.executavel_leitor)
+        if modo_original == MODO_PRODUCAO and self.gestor_modo.obter_pid_servico() is not None:
+            self.gestor_modo.alternar_para_modo_cadastro()
+            trocou_modo = True
+            time.sleep(0.4)  # Intervalo para o loop da porta liberar o leitor SPI
+
         try:
-            uid = leitor.ler(timeout)
+            leitor = setup_leitor(executavel=self.executavel_leitor)
+            try:
+                uid = leitor.ler(timeout)
+            finally:
+                leitor.encerrar()
         finally:
-            leitor.encerrar()
+            if trocou_modo:
+                self.gestor_modo.alternar_para_modo_producao()
 
         if not uid:
             raise TimeoutError("Tempo limite esgotado: nenhum cartão foi aproximado do leitor.")

@@ -46,7 +46,13 @@ const state = {
   doorRemainingTime: 0,
   currentMode: 'PRODUCAO',
   users: [],
+  filtroMembros: 'todos',
   logs: [],
+  logPage: 1,
+  logPageSize: 20,
+  logMaxPages: 3,
+  logSearch: '',
+  isScanning: false,
   nextSuggestedId: '001',
   wizardData: {
     id: '',
@@ -483,15 +489,43 @@ async function fetchUsers() {
   }
 }
 
+function setFiltroMembros(filtro) {
+  state.filtroMembros = filtro;
+  ['todos', 'ativos', 'inativos'].forEach(f => {
+    const btn = document.getElementById(`filter-btn-${f}`);
+    if (btn) btn.classList.toggle('active', f === filtro);
+  });
+  renderUsersTable(state.users);
+}
+
 function renderUsersTable(users) {
   const tbody = document.getElementById('users-table-rows');
   if (!tbody) return;
 
-  if (users.length === 0) {
+  const validos = (users || []).filter(u => !u.excluido);
+  const total = validos.length;
+  const ativos = validos.filter(u => u.ativo).length;
+  const inativos = total - ativos;
+
+  const elTodos = document.getElementById('count-membros-todos');
+  const elAtivos = document.getElementById('count-membros-ativos');
+  const elInativos = document.getElementById('count-membros-inativos');
+  if (elTodos) elTodos.textContent = total;
+  if (elAtivos) elAtivos.textContent = ativos;
+  if (elInativos) elInativos.textContent = inativos;
+
+  let filtrados = users || [];
+  if (state.filtroMembros === 'ativos') {
+    filtrados = filtrados.filter(u => !u.excluido && u.ativo);
+  } else if (state.filtroMembros === 'inativos') {
+    filtrados = filtrados.filter(u => !u.excluido && !u.ativo);
+  }
+
+  if (filtrados.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="5" style="text-align: center; color: var(--gear-slate); padding: 36px;">
-          Nenhum membro cadastrado.
+          ${state.filtroMembros !== 'todos' ? 'Nenhum membro com a situação selecionada.' : 'Nenhum membro cadastrado.'}
         </td>
       </tr>
     `;
@@ -644,7 +678,11 @@ function wizardAvancarParaLeitura() {
   document.getElementById('wiz-display-id').textContent = state.wizardData.id;
 
   setWizardStep(2);
-  setTimeout(() => document.getElementById('wiz-input-uid').focus(), 150);
+  setTimeout(() => {
+    const input = document.getElementById('wiz-input-uid');
+    if (input) input.focus();
+    capturarTagParaWizard();
+  }, 200);
 }
 
 function wizardVoltarPasso1() {
@@ -908,15 +946,16 @@ async function checarCartao() {
 }
 
 /* ==========================================================================
-   HISTÓRICO DE ACESSOS
+   HISTÓRICO DE ACESSOS (PAGINADO & EXPORTÁVEL)
    ========================================================================== */
 async function fetchLogs() {
   try {
-    const res = await authFetch('/api/registros?limite=35');
+    const res = await authFetch('/api/registros?limite=60');
     const data = await res.json();
     if (!data.sucesso) return;
 
-    renderLogsTable(data.registros);
+    state.logs = data.registros || [];
+    renderLogsTable();
   } catch (e) {
     // 401 tratado por authFetch
   }
@@ -929,26 +968,71 @@ function formatReason(reason) {
     case 'cartao_nao_cadastrado': return 'Acesso Negado: Cartão Desconhecido';
     case 'liberacao_remota_console': return 'Liberação Remota via Console';
     case 'liberacao_remota_web': return 'Liberação Remota via Painel Web';
+    case 'liberacao_remota_rfid': return 'Abertura Autorizada RFID';
     default: return reason || 'Registrado';
   }
 }
 
-function renderLogsTable(logs) {
+function onLogSearchInput() {
+  const input = document.getElementById('log-search-input');
+  state.logSearch = input ? input.value.trim().toLowerCase() : '';
+  state.logPage = 1;
+  renderLogsTable();
+}
+
+function mudarPaginaLogs(delta) {
+  state.logPage += delta;
+  renderLogsTable();
+}
+
+function renderLogsTable() {
   const tbody = document.getElementById('logs-table-rows');
   if (!tbody) return;
 
-  if (logs.length === 0) {
+  let filtrados = state.logs || [];
+  if (state.logSearch) {
+    filtrados = filtrados.filter(l =>
+      (l.usuario_nome && l.usuario_nome.toLowerCase().includes(state.logSearch)) ||
+      (l.uid_cartao && l.uid_cartao.toLowerCase().includes(state.logSearch)) ||
+      (l.usuario_id && l.usuario_id.toLowerCase().includes(state.logSearch)) ||
+      (l.motivo && l.motivo.toLowerCase().includes(state.logSearch))
+    );
+  }
+
+  const totalItens = filtrados.length;
+  const pageSize = state.logPageSize || 20;
+  const maxPages = Math.min(state.logMaxPages || 3, Math.ceil(totalItens / pageSize) || 1);
+
+  if (state.logPage > maxPages) state.logPage = maxPages;
+  if (state.logPage < 1) state.logPage = 1;
+
+  const inicio = (state.logPage - 1) * pageSize;
+  const fim = Math.min(inicio + pageSize, totalItens);
+  const paginaItens = filtrados.slice(inicio, fim);
+
+  // Atualiza controles de paginação
+  const infoEl = document.getElementById('log-pagination-info');
+  const currentEl = document.getElementById('log-page-current');
+  const btnPrev = document.getElementById('btn-log-prev');
+  const btnNext = document.getElementById('btn-log-next');
+
+  if (infoEl) infoEl.textContent = totalItens > 0 ? `Mostrando ${inicio + 1}–${fim} de ${totalItens} registros` : 'Nenhum registro';
+  if (currentEl) currentEl.textContent = `Página ${state.logPage} de ${maxPages}`;
+  if (btnPrev) btnPrev.disabled = (state.logPage <= 1);
+  if (btnNext) btnNext.disabled = (state.logPage >= maxPages || fim >= totalItens);
+
+  if (paginaItens.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="5" style="text-align: center; color: var(--gear-slate); padding: 36px;">
-          Nenhum registro de acesso registrado.
+          ${state.logSearch ? 'Nenhum registro encontrado para o termo buscado.' : 'Nenhum registro de acesso registrado.'}
         </td>
       </tr>
     `;
     return;
   }
 
-  tbody.innerHTML = logs.map(l => {
+  tbody.innerHTML = paginaItens.map(l => {
     const timeFormatted = l.data_hora ? l.data_hora.replace('T', ' ').substring(0, 19) : '-';
     const statusBadge = l.autorizado
       ? `<span class="badge-status ativo"><span class="status-dot-sm"></span>Autorizado</span>`
@@ -964,6 +1048,118 @@ function renderLogsTable(logs) {
       </tr>
     `;
   }).join('');
+}
+
+function baixarLogsCSV() {
+  if (!state.logs || state.logs.length === 0) {
+    showToast('Nenhum registro disponível para download.', 'warning');
+    return;
+  }
+
+  const linhas = ["Data e Hora;Membro;ID Usuario;Cartao UID;Resultado;Motivo"];
+  state.logs.forEach(l => {
+    const dt = l.data_hora ? l.data_hora.replace('T', ' ').substring(0, 19) : '-';
+    const nome = (l.usuario_nome || 'Console / Remoto').replace(/;/g, ',');
+    const uid = l.uid_cartao || '-';
+    const uId = l.usuario_id || '-';
+    const res = l.autorizado ? 'AUTORIZADO' : 'NEGADO';
+    const motivo = formatReason(l.motivo).replace(/;/g, ',');
+    linhas.push(`${dt};${nome};${uId};${uid};${res};${motivo}`);
+  });
+
+  const conteudo = "\uFEFF" + linhas.join("\r\n");
+  const blob = new Blob([conteudo], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `historico_acessos_porta_gear_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  showToast('Download do arquivo CSV concluído!');
+}
+
+/* ==========================================================================
+   CAPTURA DIRETA NO LEITOR HARDWARE PN532 (SOB DEMANDA)
+   ========================================================================== */
+async function capturarTagDoLeitor(targetInputId, feedbackElemId, btnElemId) {
+  if (state.isScanning) {
+    showToast('Já existe uma leitura do leitor em andamento.', 'warning');
+    return;
+  }
+
+  const input = document.getElementById(targetInputId);
+  const feedback = document.getElementById(feedbackElemId);
+  const btn = btnElemId ? document.getElementById(btnElemId) : null;
+  const textoOriginalBtn = btn ? btn.innerHTML : '';
+
+  state.isScanning = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Lendo...';
+  }
+  if (feedback) {
+    feedback.style.display = 'block';
+    feedback.style.color = 'var(--gear-blue)';
+    feedback.innerHTML = '<span class="pulse-reading">📡 Aproxime o cartão físico no leitor PN532...</span>';
+  }
+
+  try {
+    const res = await authFetch('/api/leitor/capturar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeout: 15.0 })
+    });
+
+    const data = await res.json();
+    if (data.sucesso && data.uid) {
+      if (input) {
+        input.value = data.uid;
+        input.classList.add('flash-success');
+        setTimeout(() => input.classList.remove('flash-success'), 1200);
+      }
+      playAudioTone('unlock');
+      if (feedback) {
+        feedback.style.color = 'var(--color-success)';
+        feedback.innerHTML = `✅ <strong>Cartão lido:</strong> <code>${data.uid}</code>`;
+      }
+      showToast(`Cartão ${data.uid} lido com sucesso!`);
+    } else {
+      if (feedback) {
+        feedback.style.color = 'var(--color-danger)';
+        feedback.textContent = data.erro || 'Nenhum cartão detectado.';
+      }
+      showToast(data.erro || 'Nenhum cartão detectado.', 'warning');
+    }
+  } catch (e) {
+    if (feedback) {
+      feedback.style.color = 'var(--color-danger)';
+      feedback.textContent = 'Tempo esgotado ou leitor indisponível.';
+    }
+  } finally {
+    state.isScanning = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = textoOriginalBtn;
+    }
+  }
+}
+
+function capturarTagParaCheck() {
+  capturarTagDoLeitor('check-card-input', 'check-card-feedback', 'btn-ler-check-card');
+}
+
+function capturarTagParaWizard() {
+  capturarTagDoLeitor('wiz-input-uid', 'wiz-scan-feedback', 'btn-wiz-ler');
+}
+
+function capturarTagParaTroca() {
+  capturarTagDoLeitor('troca-cartao-novo-uid', 'troca-cartao-feedback', 'btn-troca-ler');
+}
+
+function capturarTagParaManual() {
+  capturarTagDoLeitor('manual-membro-uid', 'manual-membro-feedback', 'btn-manual-ler');
 }
 
 // Troca de Abas da Sidebar

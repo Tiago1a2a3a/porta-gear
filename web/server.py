@@ -16,6 +16,7 @@ import re
 import socket
 import subprocess
 import sys
+import threading
 import time
 from urllib.parse import urlparse, parse_qs
 
@@ -152,9 +153,33 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
         # API: Registros de auditoria de acessos
         if rota == "/api/registros":
             params = parse_qs(url.query)
-            limite = int(params.get("limite", [30])[0])
-            registros = self.servicos.obter_registros(limite=limite)
+            limite = int(params.get("limite", [60])[0])
+            busca = params.get("busca", [None])[0]
+            registros = self.servicos.obter_registros(limite=limite, busca=busca)
             return self._responder_json(200, {"sucesso": True, "registros": registros})
+
+        # API: Exportação de histórico de acessos para CSV
+        if rota == "/api/registros/exportar":
+            registros = self.servicos.obter_registros(limite=1000)
+            linhas_csv = ["Data e Hora;Membro;ID Usuario;Cartao UID;Resultado;Motivo"]
+            for r in registros:
+                resultado_txt = "AUTORIZADO" if r["autorizado"] else "NEGADO"
+                nome = (r["usuario_nome"] or "-").replace(";", ",")
+                uid = r["uid_cartao"] or "-"
+                u_id = r["usuario_id"] or "-"
+                motivo = (r["motivo"] or "-").replace(";", ",")
+                dt = r["data_hora"] or "-"
+                linhas_csv.append(f"{dt};{nome};{u_id};{uid};{resultado_txt};{motivo}")
+            conteudo_csv = "\r\n".join(linhas_csv).encode("utf-8-sig")
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="historico_acessos_porta_gear.csv"')
+            self.send_header("Content-Length", str(len(conteudo_csv)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(conteudo_csv)
+            return
 
         self._responder_erro(404, "Endpoint não encontrado.")
 
@@ -219,11 +244,14 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
 
         # API: Captura direta no leitor de hardware físico (se presente)
         if rota == "/api/leitor/capturar":
-            timeout = float(body.get("timeout", 30.0))
+            timeout = float(body.get("timeout", 20.0))
             try:
                 uid = self.servicos.capturar_tag_leitor_hardware(timeout=timeout)
-                resultado = self.servicos.processar_tag(uid)
-                return self._responder_json(200, resultado)
+                return self._responder_json(200, {
+                    "sucesso": True,
+                    "uid": uid,
+                    "mensagem": f"Cartão {uid} lido com sucesso!"
+                })
             except ErroModoBloqueado as e:
                 return self._responder_erro(403, str(e))
             except TimeoutError as e:
@@ -436,18 +464,33 @@ def executar_servidor(porta: int = 8088, caminho_db: Path | str | None = None):
     if servidor is None:
         raise RuntimeError(f"Não foi possível vincular o servidor às portas {portas_tentar}.")
 
+    # Abre a porta alternativa (80 ou 8088) em segundo plano se disponível
+    servidor_secundario = None
+    porta_secundaria = 8088 if porta_usada == 80 else (80 if porta_usada == 8088 else None)
+    if porta_secundaria:
+        try:
+            servidor_secundario = HTTPServer(("0.0.0.0", porta_secundaria), RequisicaoHandler)
+            threading.Thread(target=servidor_secundario.serve_forever, daemon=True).start()
+        except OSError:
+            servidor_secundario = None
+
     ips_locais = obter_ips_locais()
+
+    def _link(ip: str, p: int) -> str:
+        return f"http://{ip}" if p == 80 else f"http://{ip}:{p}"
 
     print("=" * 65)
     print("  [*] SISTEMA PORTA GEAR - PAINEL DE CONTROLE SEGURO")
     print(f"  [+] Banco SQLite: {caminho_db}")
     print(f"  [+] Autenticação & Anti-Bypass: Ativado")
-    print(f"  [+] Servidor local: http://localhost:{porta_usada}")
+    print(f"  [+] Servidor local: {_link('localhost', porta_usada)}")
     if ips_locais:
         for ip_local in ips_locais:
-            print(f"  [+] Link na rede local: http://{ip_local}:{porta_usada}")
+            print(f"  [+] Link na rede local: {_link(ip_local, porta_usada)}")
+            if servidor_secundario is not None:
+                print(f"  [+] Link alternativo:  {_link(ip_local, porta_secundaria)}")
     else:
-        print(f"  [+] Na rede local: http://0.0.0.0:{porta_usada}")
+        print(f"  [+] Na rede local: {_link('0.0.0.0', porta_usada)}")
     if porta_usada != porta:
         print(f"  [!] (Porta {porta} ja estava em uso, inicializado na porta {porta_usada})")
     print("=" * 65)
@@ -459,11 +502,14 @@ def executar_servidor(porta: int = 8088, caminho_db: Path | str | None = None):
         print("\nServidor finalizado com sucesso.")
     finally:
         servidor.server_close()
+        if servidor_secundario is not None:
+            servidor_secundario.server_close()
 
 
 if __name__ == "__main__":
+    porta_padrao = 80 if sys.platform != "win32" else 8088
     parser = argparse.ArgumentParser(description="Servidor Web Porta GEAR")
-    parser.add_argument("--porta", type=int, default=8088, help="Porta HTTP (padrão: 8088)")
+    parser.add_argument("--porta", type=int, default=porta_padrao, help=f"Porta HTTP (padrão: {porta_padrao})")
     parser.add_argument("--database", type=str, default=None, help="Caminho do banco SQLite")
     args = parser.parse_args()
 

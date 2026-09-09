@@ -1375,3 +1375,37 @@ body {
   color: #ff858d;
   border-color: rgba(227, 41, 53, 0.5);
 }
+
+/* Filtros de Membros e Paginação */
+.btn-filter-pill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--gear-line);
+  background: var(--gear-card);
+  color: var(--gear-slate);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-filter-pill:hover {
+  border-color: var(--gear-red);
+  color: var(--gear-ink);
+}
+.btn-filter-pill.active {
+  background: var(--gear-red);
+  color: #ffffff;
+  border-color: var(--gear-red);
+  box-shadow: 0 2px 8px var(--gear-red-glow);
+}
+
+.pulse-reading {
+  animation: pulseReading 1.2s infinite ease-in-out;
+}
+@keyframes pulseReading {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.96); }
+}

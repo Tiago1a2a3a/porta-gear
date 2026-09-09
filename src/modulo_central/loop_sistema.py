@@ -15,7 +15,8 @@ from src.modulo_central.gestor_modo import (
 )
 from src.modulo_central.setup_sistema import Sistema
 from src.modulo_database.database import DecisaoAcesso
-from src.modulo_leitor.setup_leitor import setup_leitor
+from src.modulo_leitor.leitor import ErroLeitor
+from src.modulo_leitor.setup_leitor import EXECUTAVEL_PADRAO, setup_leitor
 
 
 def executar_loop(
@@ -35,11 +36,16 @@ def executar_loop(
     def _tratar_sigusr2(signum: int, frame: object) -> None:
         raise InterrupcaoModo(MODO_PRODUCAO)
 
+    def _tratar_sigterm(signum: int, frame: object) -> None:
+        sys.exit(0)
+
     if sys.platform != "win32":
         if hasattr(signal, "SIGUSR1"):
             signal.signal(signal.SIGUSR1, _tratar_sigusr1)
         if hasattr(signal, "SIGUSR2"):
             signal.signal(signal.SIGUSR2, _tratar_sigusr2)
+        if hasattr(signal, "SIGTERM"):
+            signal.signal(signal.SIGTERM, _tratar_sigterm)
 
     print(f"Sistema iniciado em MODO PRODUÇÃO. Leitor pronto: {sistema.leitor.nome_dispositivo}")
 
@@ -64,13 +70,27 @@ def executar_loop(
             # MODO_PRODUCAO
             if not leitor_aberto:
                 print("[MODO PRODUÇÃO] Reativando leitor PN532 para controle de acesso...")
-                if sistema.configuracao is not None:
+                executavel = (
+                    sistema.configuracao.executavel_leitor
+                    if sistema.configuracao is not None
+                    else getattr(sistema.leitor, "executavel", EXECUTAVEL_PADRAO)
+                )
+                timeout_setup = (
+                    sistema.configuracao.timeout_setup_leitor
+                    if sistema.configuracao is not None
+                    else 10.0
+                )
+                try:
                     sistema.leitor = setup_leitor(
-                        executavel=sistema.configuracao.executavel_leitor,
-                        timeout_setup=sistema.configuracao.timeout_setup_leitor,
+                        executavel=executavel,
+                        timeout_setup=timeout_setup,
                     )
-                leitor_aberto = True
-                print(f"Leitor pronto: {sistema.leitor.nome_dispositivo}")
+                    leitor_aberto = True
+                    print(f"Leitor pronto: {sistema.leitor.nome_dispositivo}")
+                except ErroLeitor as erro:
+                    print(f"Aviso: falha temporária ao inicializar leitor: {erro}. Nova tentativa em 1s...")
+                    time.sleep(1.0)
+                    continue
 
             try:
                 uid = sistema.leitor.ler()
@@ -83,6 +103,12 @@ def executar_loop(
                         sistema.leitor.encerrar()
                         leitor_aberto = False
                         print("[MODO CADASTRO] Leitor PN532 liberado da porta. Pronto para novos cadastros ou troca de cartões.")
+            except ErroLeitor as erro:
+                print(f"Aviso: falha de leitura no leitor PN532: {erro}. Reiniciando...")
+                if leitor_aberto:
+                    sistema.leitor.encerrar()
+                    leitor_aberto = False
+                time.sleep(0.5)
     finally:
         if leitor_aberto:
             sistema.leitor.encerrar()
