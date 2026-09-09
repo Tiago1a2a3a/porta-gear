@@ -12,6 +12,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import mimetypes
 from pathlib import Path
+import re
+import socket
+import subprocess
 import sys
 import time
 from urllib.parse import urlparse, parse_qs
@@ -360,6 +363,47 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
             self._responder_erro(500, f"Erro ao ler arquivo: {e}")
 
 
+def obter_ips_locais() -> list[str]:
+    """Descobre os endereços IPv4 reais das interfaces de rede ativas."""
+    ips: list[str] = []
+
+    # 1. Tenta obter o IP de rota de saída via socket UDP (sem envio real de pacotes)
+    for host_teste in ("8.8.8.8", "1.1.1.1", "192.168.10.194", "172.32.0.100"):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.settimeout(0.2)
+                s.connect((host_teste, 80))
+                ip_saida = s.getsockname()[0]
+                if ip_saida and not ip_saida.startswith("127.") and ip_saida not in ips:
+                    ips.append(ip_saida)
+                    break
+        except Exception:
+            pass
+
+    # 2. Resolução através do hostname
+    try:
+        nome_host = socket.gethostname()
+        for ip in socket.gethostbyname_ex(nome_host)[2]:
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+
+    # 3. Varredura direta das interfaces via ifconfig (Linux / Luckfox) ou ipconfig (Windows)
+    try:
+        cmd = ["ifconfig"] if sys.platform != "win32" else ["ipconfig"]
+        saida = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=2).decode("latin-1", errors="ignore")
+        padrao = r"inet (?:addr:)?([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)" if sys.platform != "win32" else r"IPv4.*?: ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)"
+        for match in re.finditer(padrao, saida):
+            ip_achado = match.group(1)
+            if not ip_achado.startswith("127.") and ip_achado not in ips:
+                ips.append(ip_achado)
+    except Exception:
+        pass
+
+    return ips
+
+
 def executar_servidor(porta: int = 8088, caminho_db: Path | str | None = None):
     """Inicializa e executa o servidor HTTP na porta especificada."""
     if caminho_db is None:
@@ -388,12 +432,18 @@ def executar_servidor(porta: int = 8088, caminho_db: Path | str | None = None):
     if servidor is None:
         raise RuntimeError(f"Não foi possível vincular o servidor às portas {portas_tentar}.")
 
+    ips_locais = obter_ips_locais()
+
     print("=" * 65)
     print("  [*] SISTEMA PORTA GEAR - PAINEL DE CONTROLE SEGURO")
     print(f"  [+] Banco SQLite: {caminho_db}")
     print(f"  [+] Autenticação & Anti-Bypass: Ativado")
-    print(f"  [+] Servidor disponivel em: http://localhost:{porta_usada}")
-    print(f"  [+] Na rede local: http://0.0.0.0:{porta_usada}")
+    print(f"  [+] Servidor local: http://localhost:{porta_usada}")
+    if ips_locais:
+        for ip_local in ips_locais:
+            print(f"  [+] Link na rede local: http://{ip_local}:{porta_usada}")
+    else:
+        print(f"  [+] Na rede local: http://0.0.0.0:{porta_usada}")
     if porta_usada != porta:
         print(f"  [!] (Porta {porta} ja estava em uso, inicializado na porta {porta_usada})")
     print("=" * 65)
