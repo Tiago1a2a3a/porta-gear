@@ -31,6 +31,27 @@ from src.modulo_central.servicos_porta import ServicosPorta
 from src.modulo_database.database import ErroDatabase
 from src.modulo_database.setup_database import CAMINHO_DATABASE_PADRAO
 
+_falhas_login = {}
+_lock_falhas = threading.Lock()
+
+def _verificar_rate_limit(ip: str) -> bool:
+    agora = time.time()
+    limite_tempo = 15 * 60
+    with _lock_falhas:
+        falhas = _falhas_login.get(ip, [])
+        falhas = [t for t in falhas if agora - t < limite_tempo]
+        _falhas_login[ip] = falhas
+        if len(falhas) >= 5:
+            return False
+        return True
+
+def _registrar_falha_login(ip: str):
+    agora = time.time()
+    with _lock_falhas:
+        if ip not in _falhas_login:
+            _falhas_login[ip] = []
+        _falhas_login[ip].append(agora)
+
 
 class RequisicaoHandler(BaseHTTPRequestHandler):
     """Adaptador HTTP REST seguro para os serviços da Porta GEAR."""
@@ -50,9 +71,6 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corpo)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Auth-Token")
         self.end_headers()
         self.wfile.write(corpo)
 
@@ -63,6 +81,8 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
         tamanho = int(self.headers.get("Content-Length", 0))
         if tamanho <= 0:
             return {}
+        if tamanho > 65536:
+            raise ValueError("Payload muito grande (máximo 64KB permitido).")
         dados = self.rfile.read(tamanho)
         return json.loads(dados.decode("utf-8"))
 
@@ -94,9 +114,6 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Auth-Token")
         self.end_headers()
 
     # -------------------------------------------------------------------------
@@ -176,7 +193,6 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/csv; charset=utf-8")
             self.send_header("Content-Disposition", 'attachment; filename="historico_acessos_porta_gear.csv"')
             self.send_header("Content-Length", str(len(conteudo_csv)))
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(conteudo_csv)
             return
@@ -197,11 +213,16 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
 
         # API: Login de Administrador (Pública)
         if rota == "/api/auth/login":
+            ip = self.address_string()
+            if not _verificar_rate_limit(ip):
+                return self._responder_erro(429, "Muitas tentativas falhas. Bloqueio temporário de 15 minutos.")
+
             senha = body.get("senha", "")
             try:
                 resultado = self.servicos.autenticar_admin(senha)
                 return self._responder_json(200, resultado)
             except PermissionError as e:
+                _registrar_falha_login(ip)
                 return self._responder_json(401, {"sucesso": False, "erro": str(e)})
             except Exception as e:
                 return self._responder_erro(500, f"Erro interno: {e}")
@@ -244,7 +265,7 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
 
         # API: Captura direta no leitor de hardware físico (se presente)
         if rota == "/api/leitor/capturar":
-            timeout = float(body.get("timeout", 20.0))
+            timeout = min(float(body.get("timeout", 20.0)), 60.0)
             try:
                 uid = self.servicos.capturar_tag_leitor_hardware(timeout=timeout)
                 return self._responder_json(200, {
@@ -474,10 +495,35 @@ def executar_servidor(porta: int = 8088, caminho_db: Path | str | None = None):
         except OSError:
             servidor_secundario = None
 
+    import ssl
+    protocolo = "http"
+    try:
+        cert_path = PASTA_PROJETO / "cert.pem"
+        key_path = PASTA_PROJETO / "key.pem"
+        
+        if not cert_path.exists() or not key_path.exists():
+            try:
+                subprocess.run(
+                    ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", str(key_path), "-out", str(cert_path), "-days", "365", "-nodes", "-subj", "/CN=localhost"],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                pass
+
+        if cert_path.exists() and key_path.exists():
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(certfile=cert_path, keyfile=key_path)
+            servidor.socket = context.wrap_socket(servidor.socket, server_side=True)
+            if servidor_secundario:
+                servidor_secundario.socket = context.wrap_socket(servidor_secundario.socket, server_side=True)
+            protocolo = "https"
+    except Exception as e:
+        print(f"  [!] Aviso: Não foi possível configurar HTTPS. {e}")
+
     ips_locais = obter_ips_locais()
 
     def _link(ip: str, p: int) -> str:
-        return f"http://{ip}" if p == 80 else f"http://{ip}:{p}"
+        return f"{protocolo}://{ip}" if p == 80 else f"{protocolo}://{ip}:{p}"
 
     print("=" * 65)
     print("  [*] SISTEMA PORTA GEAR - PAINEL DE CONTROLE SEGURO")

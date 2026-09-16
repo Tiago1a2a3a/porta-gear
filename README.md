@@ -53,9 +53,16 @@ O sistema conta com uma interface web de alto padrão visual, desenvolvida espec
 
 ### 🔒 Segurança e Autenticação Anti-Bypass
 - **Bloqueio com Vidro Fosco (*Frosted Glass Blur*)**: Tela de login minimalista flutuando sobre o painel desfocado em tempo real.
-- **Validação Anti-Bypass no Servidor**: Nenhuma rota da API (status, acionamento do relé, alternância de modo ou cadastro) pode ser consumida sem um token criptográfico emitido após o login.
-- **Senha Fixa em Código**: Definida diretamente como constante imutável em [`src/modulo_central/servicos_porta.py`](src/modulo_central/servicos_porta.py):
-  > **Senha de acesso de administrador (neste commit):** `123456789`
+- **Validação Anti-Bypass no Servidor**: Nenhuma rota da API pode ser consumida sem um token criptográfico emitido após o login.
+- **Armazenamento Seguro de Senha**: Senha de administrador armazenada no banco SQLite local com hash PBKDF2-HMAC-SHA256 e validação por *salt*.
+  > **Senha de acesso de administrador padrão (deve ser trocada no primeiro acesso):** `123456789`
+
+### 🔑 Como Entrar no Laboratório (Para Usuários Não-Administradores)
+Se você é um pesquisador ou membro do projeto e não é administrador, você precisa do seu **Cartão RFID / Tag NFC** autorizado:
+1. Solicite a um administrador que realize o seu **cadastro** utilizando o painel web ou via terminal.
+2. Com o seu cartão já vinculado e com a permissão "Ativo", **aproxime a sua tag do leitor PN532** (localizado do lado de fora da porta).
+3. Se o cartão estiver autorizado e o sistema estiver em **Modo Produção**, a fechadura destrancará imediatamente por 3 pulsos.
+4. Caso a porta não abra, verifique no painel web (com um administrador) o histórico de acessos para ver o motivo (ex: "Cartão Não Cadastrado" ou "Usuário Inativo").
 
 ### 🚀 Como Executar o Servidor Web
 

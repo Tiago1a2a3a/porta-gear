@@ -7,6 +7,16 @@
 // Chave para persistência da credencial de sessão do navegador
 const AUTH_STORAGE_KEY = 'gear_auth_token';
 
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, s => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[s]));
+}
+
+function escapeJs(str) {
+  return String(str || '').replace(/[\\'"]/g, '\\$&').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+}
+
 function getAuthToken() {
   return sessionStorage.getItem(AUTH_STORAGE_KEY) || '';
 }
@@ -126,7 +136,7 @@ function showToast(message, type = 'success') {
   toast.className = `toast-item ${type}`;
   toast.innerHTML = `
     <span>${type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅'}</span>
-    <div>${message}</div>
+    <div>${escapeHtml(message)}</div>
   `;
   container.appendChild(toast);
 
@@ -233,6 +243,9 @@ async function realizarLogin(e) {
       setAuthToken(data.token);
       hideAuthOverlay();
       showToast('Painel desbloqueado com sucesso!');
+      if (data.requer_troca_senha) {
+          setTimeout(() => alert('⚠️ ALERTA DE SEGURANÇA:\nVocê está usando a senha padrão (123456789).\nPor favor, atualize-a imediatamente no banco de dados para evitar acessos não autorizados.'), 500);
+      }
       iniciarPainel();
     } else {
       if (errBox) {
@@ -556,16 +569,16 @@ function renderUsersTable(users) {
     } else {
       actionsHtml = `
         <div class="row-actions">
-          <button class="btn-action-pill trocar-cartao" onclick="abrirModalTrocarCartao('${u.id}', '${u.nome}', '${u.uid_cartao}')" title="Substituir cartão RFID">
+          <button class="btn-action-pill trocar-cartao" onclick="abrirModalTrocarCartao('${escapeHtml(escapeJs(u.id))}', '${escapeHtml(escapeJs(u.nome))}', '${escapeHtml(escapeJs(u.uid_cartao))}')" title="Substituir cartão RFID">
             🔁 Trocar Cartão
           </button>
-          <button class="btn-action-pill editar" onclick="abrirModalEditarNome('${u.id}', '${u.nome}')" title="Editar nome">
+          <button class="btn-action-pill editar" onclick="abrirModalEditarNome('${escapeHtml(escapeJs(u.id))}', '${escapeHtml(escapeJs(u.nome))}')" title="Editar nome">
             ✏️ Editar
           </button>
-          <button class="btn-action-icon toggle" onclick="toggleUserStatus('${u.id}', ${!u.ativo})" title="${u.ativo ? 'Bloquear acesso' : 'Liberar acesso'}">
+          <button class="btn-action-icon toggle" onclick="toggleUserStatus('${escapeHtml(escapeJs(u.id))}', ${!u.ativo})" title="${u.ativo ? 'Bloquear acesso' : 'Liberar acesso'}">
             ${u.ativo ? '⏸️' : '▶️'}
           </button>
-          <button class="btn-action-icon delete" onclick="confirmDeleteUser('${u.id}', '${u.nome}')" title="Remover membro">
+          <button class="btn-action-icon delete" onclick="confirmDeleteUser('${escapeHtml(escapeJs(u.id))}', '${escapeHtml(escapeJs(u.nome))}')" title="Remover membro">
             🗑️
           </button>
         </div>
@@ -574,9 +587,9 @@ function renderUsersTable(users) {
 
     return `
       <tr>
-        <td><span class="badge-id">${u.id}</span></td>
-        <td><strong>${u.nome}</strong></td>
-        <td><span class="badge-uid">${u.uid_cartao}</span></td>
+        <td><span class="badge-id">${escapeHtml(u.id)}</span></td>
+        <td><strong>${escapeHtml(u.nome)}</strong></td>
+        <td><span class="badge-uid">${escapeHtml(u.uid_cartao)}</span></td>
         <td>${statusHtml}</td>
         <td>${actionsHtml}</td>
       </tr>
@@ -913,12 +926,12 @@ async function checarCartao() {
         if (data.ja_cadastrado) {
           resultBox.className = 'check-result-card success';
           resultBox.innerHTML = `
-            <strong>Cartão Cadastrado:</strong> Pertence a <strong>${data.usuario.nome}</strong> (ID: ${data.usuario.id}) &bull; Situação: ${data.usuario.ativo ? 'Ativo' : 'Inativo'}.
+            <strong>Cartão Cadastrado:</strong> Pertence a <strong>${escapeHtml(data.usuario.nome)}</strong> (ID: ${escapeHtml(String(data.usuario.id))}) &bull; Situação: ${data.usuario.ativo ? 'Ativo' : 'Inativo'}.
           `;
         } else {
           resultBox.className = 'check-result-card success';
           resultBox.innerHTML = `
-            <strong>Cartão Livre:</strong> UID <code>${data.uid}</code> não está vinculado a nenhum membro. Pronto para cadastro!
+            <strong>Cartão Livre:</strong> UID <code>${escapeHtml(data.uid)}</code> não está vinculado a nenhum membro. Pronto para cadastro!
           `;
         }
       } else {
@@ -926,13 +939,13 @@ async function checarCartao() {
           playAudioTone('unlock');
           resultBox.className = 'check-result-card success';
           resultBox.innerHTML = `
-            🔓 <strong>Acesso Autorizado:</strong> Membro <strong>${data.usuario.nome}</strong> (ID: ${data.usuario.id}) &bull; Fechadura destravada!
+            🔓 <strong>Acesso Autorizado:</strong> Membro <strong>${escapeHtml(data.usuario.nome)}</strong> (ID: ${escapeHtml(String(data.usuario.id))}) &bull; Fechadura destravada!
           `;
         } else {
           playAudioTone('denied');
           resultBox.className = 'check-result-card denied';
           resultBox.innerHTML = `
-            ⛔ <strong>Acesso Negado:</strong> ${formatReason(data.motivo)} (UID: ${data.uid}).
+            ⛔ <strong>Acesso Negado:</strong> ${escapeHtml(formatReason(data.motivo))} (UID: ${escapeHtml(data.uid)}).
           `;
         }
       }
@@ -1040,11 +1053,11 @@ function renderLogsTable() {
 
     return `
       <tr>
-        <td style="font-family: ui-monospace, monospace; color: var(--gear-slate); font-size: 0.85rem;">${timeFormatted}</td>
-        <td><strong>${l.usuario_nome || '<em style="color: var(--gear-slate)">Console / Remoto</em>'}</strong></td>
-        <td><span class="badge-uid">${l.uid_cartao}</span></td>
+        <td style="font-family: ui-monospace, monospace; color: var(--gear-slate); font-size: 0.85rem;">${escapeHtml(timeFormatted)}</td>
+        <td><strong>${l.usuario_nome ? escapeHtml(l.usuario_nome) : '<em style="color: var(--gear-slate)">Console / Remoto</em>'}</strong></td>
+        <td><span class="badge-uid">${escapeHtml(l.uid_cartao)}</span></td>
         <td>${statusBadge}</td>
-        <td>${formatReason(l.motivo)}</td>
+        <td>${escapeHtml(formatReason(l.motivo))}</td>
       </tr>
     `;
   }).join('');

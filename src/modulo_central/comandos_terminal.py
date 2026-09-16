@@ -127,6 +127,11 @@ def criar_parser() -> argparse.ArgumentParser:
         help="exibe o modo de operação e estado atual do leitor e do serviço",
     )
 
+    comandos.add_parser(
+        "alterar-senha",
+        help="altera a senha mestre de acesso administrativo do sistema",
+    )
+
     return parser
 
 
@@ -153,6 +158,31 @@ def executar_comando_terminal(args: argparse.Namespace) -> int:
         return 0
 
     database = setup_database(args.database)
+
+    if args.comando == "alterar-senha":
+        try:
+            import getpass
+            senha_atual = getpass.getpass("Digite a senha atual: ")
+            if not database.verificar_senha_admin(senha_atual):
+                print("Erro: A senha atual informada está incorreta.")
+                return 1
+            
+            nova_senha = getpass.getpass("Digite a nova senha: ")
+            if len(nova_senha) < 4:
+                print("Erro: A senha deve ter no mínimo 4 caracteres.")
+                return 1
+            
+            confirmacao = getpass.getpass("Confirme a nova senha: ")
+            if nova_senha != confirmacao:
+                print("Erro: As senhas não conferem.")
+                return 1
+            
+            database.definir_senha_admin(nova_senha)
+            print("Senha mestre atualizada com sucesso no banco de dados.")
+            return 0
+        except (EOFError, KeyboardInterrupt):
+            print("\nOperação cancelada.")
+            return 1
 
     if args.comando == "status":
         modo = gestor.obter_modo_atual()

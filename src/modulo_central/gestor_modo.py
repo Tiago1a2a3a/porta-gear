@@ -17,15 +17,11 @@ class ErroModoBloqueado(Exception):
     """Comando bloqueado devido ao modo de operação atual."""
 
 
-def _diretorio_temporario() -> Path:
-    padrao_linux = Path("/tmp")
-    if padrao_linux.is_dir():
-        return padrao_linux
-    return Path(tempfile.gettempdir())
+PASTA_PROJETO = Path(__file__).resolve().parent.parent.parent
+PASTA_DADOS = PASTA_PROJETO / "data"
 
-
-CAMINHO_PID_PADRAO = _diretorio_temporario() / "porta_gear.pid"
-CAMINHO_ESTADO_PADRAO = _diretorio_temporario() / "porta_gear.state"
+CAMINHO_PID_PADRAO = PASTA_DADOS / "porta_gear.pid"
+CAMINHO_ESTADO_PADRAO = PASTA_DADOS / "porta_gear.state"
 
 
 class InterrupcaoModo(Exception):

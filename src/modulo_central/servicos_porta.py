@@ -541,7 +541,7 @@ class ServicosPorta:
     def autenticar_admin(self, senha: str, duracao_sessao: float = 86400.0) -> dict[str, Any]:
         """Valida a senha fixa de administrador definida em código e gera token de sessão."""
         senha_limpa = (senha or "").strip()
-        if not hmac.compare_digest(senha_limpa, self.senha_mestre):
+        if not self.database.verificar_senha_admin(senha_limpa):
             raise PermissionError("Senha de administrador incorreta.")
 
         token = secrets.token_hex(32)
@@ -550,11 +550,14 @@ class ServicosPorta:
         with self._lock_auth:
             self._sessoes_ativas[token] = expiracao
 
+        requer_troca = (senha_limpa == "123456789")
+
         return {
             "sucesso": True,
             "token": token,
             "mensagem": "Autenticado com sucesso no sistema.",
             "expira_em": expiracao,
+            "requer_troca_senha": requer_troca,
         }
 
     def validar_token(self, token: str | None) -> bool:
