@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import hashlib
 import hmac
 from pathlib import Path
@@ -457,7 +457,8 @@ class BancoAcesso:
 
 
 def _timestamp() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+    fuso_br = timezone(timedelta(hours=-3))
+    return datetime.now(fuso_br).isoformat(timespec="seconds")
 
 
 def _usuario_da_linha(linha: sqlite3.Row) -> Usuario:

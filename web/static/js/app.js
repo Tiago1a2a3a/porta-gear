@@ -1046,7 +1046,19 @@ function renderLogsTable() {
   }
 
   tbody.innerHTML = paginaItens.map(l => {
-    const timeFormatted = l.data_hora ? l.data_hora.replace('T', ' ').substring(0, 19) : '-';
+    let timeFormatted = '-';
+    if (l.data_hora) {
+      try {
+        const d = new Date(l.data_hora);
+        if (!isNaN(d.getTime())) {
+          timeFormatted = d.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }).replace(',', '');
+        } else {
+          timeFormatted = escapeHtml(l.data_hora);
+        }
+      } catch(e) {
+        timeFormatted = escapeHtml(l.data_hora);
+      }
+    }
     const statusBadge = l.autorizado
       ? `<span class="badge-status ativo"><span class="status-dot-sm"></span>Autorizado</span>`
       : `<span class="badge-status inativo"><span class="status-dot-sm"></span>Negado</span>`;
