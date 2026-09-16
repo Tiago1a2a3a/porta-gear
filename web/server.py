@@ -71,6 +71,9 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corpo)))
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(corpo)
 
@@ -225,7 +228,8 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
                 _registrar_falha_login(ip)
                 return self._responder_json(401, {"sucesso": False, "erro": str(e)})
             except Exception as e:
-                return self._responder_erro(500, f"Erro interno: {e}")
+                print(f"[Erro] Falha no login: {e}")
+                return self._responder_erro(500, "Erro interno do servidor.")
 
         # Validação obrigatória de segurança para todas as demais ações
         if not self._verificar_autenticacao(rota):
@@ -278,7 +282,8 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
             except TimeoutError as e:
                 return self._responder_erro(408, str(e))
             except Exception as e:
-                return self._responder_erro(500, f"Erro no leitor de hardware: {e}")
+                print(f"[Erro] Falha no leitor de hardware: {e}")
+                return self._responder_erro(500, "Erro interno de comunicação com o leitor.")
 
         # API: Cadastrar novo membro
         if rota == "/api/usuarios":
@@ -345,7 +350,8 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
             except (ErroDatabase, ValueError) as e:
                 return self._responder_erro(400, str(e))
             except Exception as e:
-                return self._responder_erro(500, f"Erro interno: {e}")
+                print(f"[Erro] Falha ao processar API: {e}")
+                return self._responder_erro(500, "Erro interno do servidor.")
 
         self._responder_erro(404, "Endpoint não encontrado.")
 
@@ -409,11 +415,14 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", f"{tipo}; charset=utf-8" if "text" in tipo or "json" in tipo or "javascript" in tipo else tipo)
             self.send_header("Content-Length", str(len(conteudo)))
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Cache-Control", "no-cache, must-revalidate")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
             self.end_headers()
             self.wfile.write(conteudo)
         except Exception as e:
-            self._responder_erro(500, f"Erro ao ler arquivo: {e}")
+            print(f"[Erro] Falha ao ler arquivo {caminho}: {e}")
+            self._responder_erro(500, "Erro interno ao servir arquivo estático.")
 
 
 def obter_ips_locais() -> list[str]:

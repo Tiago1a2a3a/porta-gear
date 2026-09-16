@@ -7,3 +7,5 @@ graphify-out/
 .agents/
 AGENTS.md
 
+cert.pem
+key.pem
