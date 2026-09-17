@@ -293,6 +293,7 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
                     nome=body.get("nome"),
                     uid_cartao=body.get("uid_cartao"),
                     ativo=body.get("ativo", True),
+                    grupo=body.get("grupo", ""),
                 )
                 return self._responder_json(201, resultado)
             except (ErroDatabase, ValueError) as e:
@@ -308,12 +309,13 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
             except (ErroDatabase, ValueError) as e:
                 return self._responder_erro(400, str(e))
 
-        # API: Trocar nome do membro
-        if rota.startswith("/api/usuarios/") and rota.endswith("/trocar-nome"):
+        # API: Editar dados básicos do membro (nome, grupo)
+        if rota.startswith("/api/usuarios/") and rota.endswith("/editar-membro"):
             id_usuario = rota.split("/")[3]
             novo_nome = str(body.get("novo_nome", "")).strip()
+            novo_grupo = str(body.get("novo_grupo", "")).strip()
             try:
-                resultado = self.servicos.alterar_nome(id_usuario, novo_nome)
+                resultado = self.servicos.alterar_membro(id_usuario, novo_nome, novo_grupo)
                 return self._responder_json(200, resultado)
             except (ErroDatabase, ValueError) as e:
                 return self._responder_erro(400, str(e))
@@ -335,7 +337,7 @@ class RequisicaoHandler(BaseHTTPRequestHandler):
             try:
                 body = self._ler_json_body()
                 if "nome" in body and body["nome"]:
-                    self.servicos.alterar_nome(id_usuario, body["nome"])
+                    self.servicos.alterar_membro(id_usuario, body["nome"], body.get("grupo"))
                 if "uid_cartao" in body and body["uid_cartao"]:
                     self.servicos.trocar_cartao(id_usuario, body["uid_cartao"])
                 if "ativo" in body and body["ativo"] is not None:

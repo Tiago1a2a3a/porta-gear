@@ -26,6 +26,7 @@ class Usuario:
     nome: str
     uid_cartao: str
     ativo: bool
+    grupo: str = ""
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,8 @@ class BancoAcesso:
                     is_active INTEGER NOT NULL DEFAULT 1
                         CHECK (is_active IN (0, 1)),
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    user_group TEXT NOT NULL DEFAULT ''
                 );
 
                 CREATE TABLE IF NOT EXISTS access_log (
@@ -114,6 +116,10 @@ class BancoAcesso:
                 );
                 """
             )
+            try:
+                conexao.execute("ALTER TABLE users ADD COLUMN user_group TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
         self.inicializar_senha_admin()
 
     def obter_config(self, chave: str, padrao: str | None = None) -> str | None:
@@ -199,11 +205,13 @@ class BancoAcesso:
         nome: str,
         uid_cartao: str,
         ativo: bool = True,
+        grupo: str = "",
     ) -> Usuario:
         """Adiciona um usuário e impede IDs ou cartões duplicados."""
         id_usuario = id_usuario.strip()
         nome = nome.strip()
         uid_cartao = normalizar_uid(uid_cartao)
+        grupo = grupo.strip()
 
         if not id_usuario:
             raise ErroDatabase("O ID do usuário é obrigatório.")
@@ -213,27 +221,34 @@ class BancoAcesso:
         agora = _timestamp()
         try:
             with self._sessao() as conexao:
+                existente = conexao.execute(
+                    "SELECT user_id FROM users WHERE LOWER(name) = LOWER(?) AND name NOT LIKE '%-exl'",
+                    (nome,)
+                ).fetchone()
+                if existente:
+                    raise ErroDatabase(f"O nome '{nome}' já está cadastrado (ID {existente['user_id']}). Use outro nome ou adicione sobrenome.")
+
                 conexao.execute(
                     """
                     INSERT INTO users
-                        (user_id, name, card_uid, is_active, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (user_id, name, card_uid, is_active, created_at, updated_at, user_group)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (id_usuario, nome, uid_cartao, int(ativo), agora, agora),
+                    (id_usuario, nome, uid_cartao, int(ativo), agora, agora, grupo),
                 )
         except sqlite3.IntegrityError as erro:
             raise ErroDatabase(
                 "ID de usuário ou UID do cartão já cadastrado."
             ) from erro
 
-        return Usuario(id_usuario, nome, uid_cartao, ativo)
+        return Usuario(id_usuario, nome, uid_cartao, ativo, grupo)
 
     def listar_usuarios(self) -> list[Usuario]:
         """Retorna todos os usuários em ordem alfabética."""
         with self._sessao() as conexao:
             linhas = conexao.execute(
                 """
-                SELECT user_id, name, card_uid, is_active
+                SELECT user_id, name, card_uid, is_active, user_group
                 FROM users
                 ORDER BY name, user_id
                 """
@@ -246,7 +261,7 @@ class BancoAcesso:
         with self._sessao() as conexao:
             linha = conexao.execute(
                 """
-                SELECT user_id, name, card_uid, is_active
+                SELECT user_id, name, card_uid, is_active, user_group
                 FROM users
                 WHERE card_uid = ?
                 """,
@@ -261,13 +276,18 @@ class BancoAcesso:
         nome: str | None = None,
         uid_cartao: str | None = None,
         ativo: bool | None = None,
+        grupo: str | None = None,
     ) -> Usuario:
         """Altera somente os campos informados de um cadastro existente."""
-        if nome is None and uid_cartao is None and ativo is None:
+        if nome is None and uid_cartao is None and ativo is None and grupo is None:
             raise ErroDatabase("Informe pelo menos um campo para alterar.")
 
         campos: list[str] = []
         valores: list[str | int] = []
+
+        if grupo is not None:
+            campos.append("user_group = ?")
+            valores.append(grupo.strip())
 
         if nome is not None:
             nome = nome.strip()
@@ -290,6 +310,14 @@ class BancoAcesso:
 
         try:
             with self._sessao() as conexao:
+                if nome is not None:
+                    existente = conexao.execute(
+                        "SELECT user_id FROM users WHERE LOWER(name) = LOWER(?) AND user_id != ? AND name NOT LIKE '%-exl'",
+                        (nome, id_usuario)
+                    ).fetchone()
+                    if existente:
+                        raise ErroDatabase(f"O nome '{nome}' já está sendo utilizado pelo usuário (ID {existente['user_id']}).")
+
                 cursor = conexao.execute(
                     f"UPDATE users SET {', '.join(campos)} WHERE user_id = ?",
                     valores,
@@ -326,7 +354,7 @@ class BancoAcesso:
         with self._sessao() as conexao:
             linha = conexao.execute(
                 """
-                SELECT user_id, name, card_uid, is_active
+                SELECT user_id, name, card_uid, is_active, user_group
                 FROM users
                 WHERE user_id = ?
                 """,
@@ -342,7 +370,7 @@ class BancoAcesso:
         with self._sessao() as conexao:
             linhas = conexao.execute(
                 """
-                SELECT user_id, name, card_uid, is_active
+                SELECT user_id, name, card_uid, is_active, user_group
                 FROM users
                 WHERE name LIKE ? AND name NOT LIKE '%-exl'
                 ORDER BY user_id ASC
@@ -443,6 +471,7 @@ class BancoAcesso:
                     a.id,
                     a.user_id,
                     u.name AS user_name,
+                    u.user_group AS user_group,
                     a.card_uid,
                     a.granted,
                     a.reason,
@@ -467,5 +496,6 @@ def _usuario_da_linha(linha: sqlite3.Row) -> Usuario:
         nome=linha["name"],
         uid_cartao=linha["card_uid"],
         ativo=bool(linha["is_active"]),
+        grupo=linha["user_group"] if "user_group" in linha.keys() else "",
     )
 

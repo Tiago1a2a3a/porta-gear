@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import secrets
 import sys
+from src.modulo_central.led import led_sistema
 import threading
 import time
 from typing import Any
@@ -196,6 +197,7 @@ class ServicosPorta:
         acionar_hardware: bool = True,
     ) -> dict[str, Any]:
         """Executa a abertura da porta, aciona o relé físico e registra log."""
+        led_sistema.piscar_sucesso()
         # Atualiza timer do estado visual da porta
         self._temporizador_fechar_porta(duracao)
 
@@ -239,6 +241,7 @@ class ServicosPorta:
         uid_cartao: str,
         id_usuario: str | None = None,
         ativo: bool = True,
+        grupo: str = "",
     ) -> dict[str, Any]:
         """Cadastra um novo membro no sistema com validações completas."""
         nome = (nome or "").strip()
@@ -268,8 +271,10 @@ class ServicosPorta:
             nome=nome,
             uid_cartao=uid_norm,
             ativo=bool(ativo),
+            grupo=grupo,
         )
 
+        led_sistema.piscar_sucesso()
         return {
             "sucesso": True,
             "mensagem": f"Membro '{usuario.nome}' (ID {usuario.id_usuario}) cadastrado com sucesso!",
@@ -278,6 +283,7 @@ class ServicosPorta:
                 "nome": usuario.nome,
                 "uid_cartao": usuario.uid_cartao,
                 "ativo": usuario.ativo,
+                "grupo": usuario.grupo,
             },
         }
 
@@ -332,8 +338,8 @@ class ServicosPorta:
             },
         }
 
-    def alterar_nome(self, id_usuario: str, novo_nome: str) -> dict[str, Any]:
-        """Atualiza o nome de um membro cadastrado."""
+    def alterar_membro(self, id_usuario: str, novo_nome: str, novo_grupo: str | None = None) -> dict[str, Any]:
+        """Atualiza o nome e o grupo de um membro cadastrado."""
         id_usuario = (id_usuario or "").strip()
         if not id_usuario:
             raise ValueError("O ID do membro é obrigatório.")
@@ -349,16 +355,18 @@ class ServicosPorta:
         usuario_atualizado = self.database.alterar_usuario(
             id_usuario=id_usuario,
             nome=novo_nome,
+            grupo=novo_grupo if novo_grupo is not None else None,
         )
 
         return {
             "sucesso": True,
-            "mensagem": f"Nome do membro atualizado para '{usuario_atualizado.nome}'!",
+            "mensagem": f"Cadastro de '{usuario_atualizado.nome}' atualizado!",
             "usuario": {
                 "id": usuario_atualizado.id_usuario,
                 "nome": usuario_atualizado.nome,
                 "uid_cartao": usuario_atualizado.uid_cartao,
                 "ativo": usuario_atualizado.ativo,
+                "grupo": usuario_atualizado.grupo,
             },
         }
 
@@ -408,6 +416,7 @@ class ServicosPorta:
                 "nome": u.nome,
                 "uid_cartao": u.uid_cartao,
                 "ativo": u.ativo,
+                "grupo": u.grupo,
                 "excluido": u.nome.endswith("-exl"),
             }
             for u in usuarios
@@ -421,7 +430,7 @@ class ServicosPorta:
         }
 
     def obter_usuario(self, id_usuario: str) -> dict[str, Any]:
-        """Obtém detalhes de um membro específico."""
+        """Busca os detalhes de um membro específico pelo ID."""
         usuario = self.database.buscar_usuario_por_id(id_usuario)
         if usuario is None:
             raise ErroDatabase(f"Membro com ID '{id_usuario}' não encontrado.")
@@ -433,6 +442,7 @@ class ServicosPorta:
                 "nome": usuario.nome,
                 "uid_cartao": usuario.uid_cartao,
                 "ativo": usuario.ativo,
+                "grupo": usuario.grupo,
                 "excluido": usuario.nome.endswith("-exl"),
             },
         }
@@ -445,6 +455,7 @@ class ServicosPorta:
                 "id": r["id"],
                 "usuario_id": r["user_id"],
                 "usuario_nome": r["user_name"],
+                "usuario_grupo": r["user_group"] or "",
                 "uid_cartao": r["card_uid"],
                 "autorizado": bool(r["granted"]),
                 "motivo": r["reason"],

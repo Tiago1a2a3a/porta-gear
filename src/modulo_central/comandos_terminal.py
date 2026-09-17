@@ -58,6 +58,7 @@ def criar_parser() -> argparse.ArgumentParser:
     cadastrar.add_argument("--id", required=True, dest="id_usuario")
     cadastrar.add_argument("--nome", required=True)
     cadastrar.add_argument("--uid", required=True, dest="uid_cartao")
+    cadastrar.add_argument("--grupo", default="")
     cadastrar.add_argument("--inativo", action="store_true")
 
     novo = comandos.add_parser(
@@ -65,6 +66,7 @@ def criar_parser() -> argparse.ArgumentParser:
         help="assistente interativo: gera próximo ID e lê a tag no PN532",
     )
     novo.add_argument("--nome", help="nome do usuário (opcional, pode digitar interativamente)")
+    novo.add_argument("--grupo", help="grupo do usuário (opcional)", default="")
     novo.add_argument("--id", dest="id_usuario", help="ID manual (opcional, gerado automaticamente)")
     novo.add_argument("--timeout", type=float, default=30.0, help="tempo máximo para aproximar a tag")
 
@@ -221,6 +223,7 @@ def executar_comando_terminal(args: argparse.Namespace) -> int:
             args.nome,
             args.uid_cartao,
             ativo=not args.inativo,
+            grupo=args.grupo,
         )
         mostrar_usuario(usuario)
         return 0
@@ -235,6 +238,14 @@ def executar_comando_terminal(args: argparse.Namespace) -> int:
                 return 1
             if not nome:
                 print("Erro: O nome do usuário não pode ser vazio.")
+                return 1
+
+        grupo = args.grupo
+        if not grupo:
+            try:
+                grupo = input("Digite o grupo (opcional): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nOperação cancelada.")
                 return 1
 
         id_usuario = args.id_usuario or database.proximo_id_disponivel()
@@ -266,6 +277,7 @@ def executar_comando_terminal(args: argparse.Namespace) -> int:
                 nome=nome,
                 uid_cartao=uid_cartao,
                 ativo=True,
+                grupo=grupo,
             )
             print("\nUsuário cadastrado com sucesso:")
             mostrar_usuario(usuario)

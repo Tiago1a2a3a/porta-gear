@@ -26,13 +26,13 @@ start() {
     cd "$PROJETO_DIR"
 
     # 1. Inicia Servidor Web se nao estiver rodando
-    if ! pgrep -f "web/server.py" >/dev/null 2>&1; then
+    if [ -z "$(pgrep -f '[w]eb/server.py')" ]; then
         nohup /usr/bin/python3 -u web/server.py --porta 80 < /dev/null > "$WEB_LOG" 2>&1 &
         echo $! > "$WEB_PID"
     fi
 
     # 2. Inicia Servico do Leitor PN532 se nao estiver rodando
-    if ! pgrep -f "main.py executar" >/dev/null 2>&1; then
+    if [ -z "$(pgrep -f '[m]ain.py executar')" ]; then
         nohup /usr/bin/python3 -u main.py executar < /dev/null > "$LOOP_LOG" 2>&1 &
         echo $! > "$LOOP_PID"
     fi
@@ -66,8 +66,8 @@ restart() {
 status() {
     web_ok=0
     loop_ok=0
-    if pgrep -f "web/server.py" >/dev/null 2>&1; then web_ok=1; fi
-    if pgrep -f "main.py executar" >/dev/null 2>&1; then loop_ok=1; fi
+    if [ -n "$(pgrep -f '[w]eb/server.py')" ]; then web_ok=1; fi
+    if [ -n "$(pgrep -f '[m]ain.py executar')" ]; then loop_ok=1; fi
 
     if [ $web_ok -eq 1 ] && [ $loop_ok -eq 1 ]; then
         echo "Sistema Porta GEAR: WEB e LEITOR PN532 estao RODANDO."

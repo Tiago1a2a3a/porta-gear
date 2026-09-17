@@ -72,16 +72,29 @@ const state = {
 };
 
 let pollTimer = null;
+let pollLogsTimer = null;
 
 function iniciarPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(fetchStatus, 1500);
+
+  if (pollLogsTimer) clearInterval(pollLogsTimer);
+  pollLogsTimer = setInterval(() => {
+    const paneHistorico = document.getElementById('pane-historico');
+    if (paneHistorico && paneHistorico.classList.contains('active')) {
+      fetchLogs();
+    }
+  }, 5000);
 }
 
 function pararPolling() {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
+  }
+  if (pollLogsTimer) {
+    clearInterval(pollLogsTimer);
+    pollLogsTimer = null;
   }
 }
 
@@ -484,11 +497,8 @@ async function triggerOpenDoor() {
 
 // Buscar Membros
 async function fetchUsers() {
-  const searchInput = document.getElementById('user-search-input');
-  const busca = searchInput ? searchInput.value.trim() : '';
-
   try {
-    const url = busca ? `/api/usuarios?busca=${encodeURIComponent(busca)}` : '/api/usuarios';
+    const url = '/api/usuarios';
     const res = await authFetch(url);
     const data = await res.json();
     if (!data.sucesso) return;
@@ -533,12 +543,36 @@ function renderUsersTable(users) {
   } else if (state.filtroMembros === 'inativos') {
     filtrados = filtrados.filter(u => !u.excluido && !u.ativo);
   }
+  
+  const searchInput = document.getElementById('user-search-input');
+  if (searchInput && searchInput.value.trim()) {
+    const termo = searchInput.value.trim().toLowerCase();
+    filtrados = filtrados.filter(u => 
+      u.nome.toLowerCase().includes(termo) || 
+      u.uid_cartao.toLowerCase().includes(termo)
+    );
+  }
+  
+  const groupInput = document.getElementById('group-search-input');
+  if (groupInput && groupInput.value.trim()) {
+    const termo = groupInput.value.trim().toLowerCase();
+    filtrados = filtrados.filter(u => 
+      u.grupo && u.grupo.toLowerCase().includes(termo)
+    );
+  }
+
+  // Atualizar a datalist com os grupos únicos
+  const datalist = document.getElementById('lista-grupos');
+  if (datalist && users) {
+    const gruposUnicos = [...new Set(users.map(u => u.grupo).filter(g => g && g.trim() !== ''))];
+    datalist.innerHTML = gruposUnicos.map(g => `<option value="${escapeHtml(g)}">`).join('');
+  }
 
   if (filtrados.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5" style="text-align: center; color: var(--gear-slate); padding: 36px;">
-          ${state.filtroMembros !== 'todos' ? 'Nenhum membro com a situação selecionada.' : 'Nenhum membro cadastrado.'}
+        <td colspan="6" style="text-align: center; color: var(--gear-slate); padding: 36px;">
+          ${state.filtroMembros !== 'todos' ? 'Nenhum membro com a situação selecionada.' : 'Nenhum membro encontrado.'}
         </td>
       </tr>
     `;
@@ -547,7 +581,7 @@ function renderUsersTable(users) {
 
   const isCadastro = state.currentMode === 'CADASTRO';
 
-  tbody.innerHTML = users.map(u => {
+  tbody.innerHTML = filtrados.map(u => {
     const isExcluded = u.excluido;
     const statusHtml = isExcluded
       ? `<span class="badge-status desligado"><span class="status-dot-sm"></span>Desligado</span>`
@@ -572,7 +606,7 @@ function renderUsersTable(users) {
           <button class="btn-action-pill trocar-cartao" onclick="abrirModalTrocarCartao('${escapeHtml(escapeJs(u.id))}', '${escapeHtml(escapeJs(u.nome))}', '${escapeHtml(escapeJs(u.uid_cartao))}')" title="Substituir cartão RFID">
             🔁 Trocar Cartão
           </button>
-          <button class="btn-action-pill editar" onclick="abrirModalEditarNome('${escapeHtml(escapeJs(u.id))}', '${escapeHtml(escapeJs(u.nome))}')" title="Editar nome">
+          <button class="btn-action-pill editar" onclick="abrirModalEditarNome('${escapeHtml(escapeJs(u.id))}', '${escapeHtml(escapeJs(u.nome))}', '${escapeHtml(escapeJs(u.grupo || ''))}')" title="Editar nome e grupo">
             ✏️ Editar
           </button>
           <button class="btn-action-icon toggle" onclick="toggleUserStatus('${escapeHtml(escapeJs(u.id))}', ${!u.ativo})" title="${u.ativo ? 'Bloquear acesso' : 'Liberar acesso'}">
@@ -589,6 +623,7 @@ function renderUsersTable(users) {
       <tr>
         <td><span class="badge-id">${escapeHtml(u.id)}</span></td>
         <td><strong>${escapeHtml(u.nome)}</strong></td>
+        <td><span style="color: var(--gear-slate);">${escapeHtml(u.grupo || '-')}</span></td>
         <td><span class="badge-uid">${escapeHtml(u.uid_cartao)}</span></td>
         <td>${statusHtml}</td>
         <td>${actionsHtml}</td>
@@ -603,6 +638,7 @@ function renderUsersTable(users) {
 function abrirModalCadastroManual() {
   document.getElementById('manual-membro-id').value = state.nextSuggestedId;
   document.getElementById('manual-membro-nome').value = '';
+  document.getElementById('manual-membro-grupo').value = '';
   document.getElementById('manual-membro-uid').value = '';
   document.getElementById('manual-membro-ativo').checked = true;
   openModal('modal-cadastro-manual');
@@ -615,6 +651,7 @@ async function salvarCadastroManual(event) {
   const id = document.getElementById('manual-membro-id').value.trim();
   const nome = document.getElementById('manual-membro-nome').value.trim();
   const uid = document.getElementById('manual-membro-uid').value.trim();
+  const grupo = document.getElementById('manual-membro-grupo').value.trim();
   const ativo = document.getElementById('manual-membro-ativo').checked;
 
   if (!id || !nome || !uid) {
@@ -626,7 +663,7 @@ async function salvarCadastroManual(event) {
     const res = await authFetch('/api/usuarios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, nome, uid_cartao: uid, ativo })
+      body: JSON.stringify({ id, nome, uid_cartao: uid, ativo, grupo })
     });
     const data = await res.json();
     if (data.sucesso) {
@@ -656,6 +693,7 @@ function iniciarCadastroAutomatizado() {
 
   document.getElementById('wiz-id-badge').textContent = state.nextSuggestedId;
   document.getElementById('wiz-input-nome').value = '';
+  document.getElementById('wiz-input-grupo').value = '';
   document.getElementById('wiz-input-uid').value = '';
 
   openModal('modal-cadastro-automatizado');
@@ -680,6 +718,8 @@ function setWizardStep(stepNumber) {
 
 function wizardAvancarParaLeitura() {
   const nome = document.getElementById('wiz-input-nome').value.trim();
+  const grupo = document.getElementById('wiz-input-grupo').value.trim();
+
   if (!nome) {
     showToast('Digite o nome do membro para prosseguir.', 'warning');
     document.getElementById('wiz-input-nome').focus();
@@ -687,6 +727,7 @@ function wizardAvancarParaLeitura() {
   }
 
   state.wizardData.nome = nome;
+  state.wizardData.grupo = grupo;
   document.getElementById('wiz-display-nome').textContent = nome;
   document.getElementById('wiz-display-id').textContent = state.wizardData.id;
 
@@ -720,6 +761,7 @@ async function wizardConfirmarLeitura() {
       body: JSON.stringify({
         id: state.wizardData.id,
         nome: state.wizardData.nome,
+        grupo: state.wizardData.grupo,
         uid_cartao: uid,
         ativo: true
       })
@@ -764,6 +806,144 @@ function setupWizardInputEvents() {
         wizardConfirmarLeitura();
       }
     });
+  }
+}
+
+/* ==========================================================================
+   CADASTRO EM LOTE
+   ========================================================================== */
+let loteAtivo = false;
+let loteLoopId = 0;
+
+function abrirModalCadastroLote() {
+  document.getElementById('lote-grupo').value = '';
+  document.getElementById('lote-feedback').style.display = 'none';
+  document.getElementById('lote-historico').innerHTML = '';
+  document.getElementById('btn-lote-iniciar').innerHTML = '▶️ Iniciar Lote';
+  document.getElementById('btn-lote-iniciar').style.background = '';
+  openModal('modal-cadastro-lote');
+}
+
+async function fecharCadastroLote() {
+  loteAtivo = false;
+  closeModal('modal-cadastro-lote');
+  fetchUsers();
+}
+
+async function toggleCadastroLote() {
+  if (loteAtivo) {
+    loteAtivo = false;
+    document.getElementById('btn-lote-iniciar').innerHTML = '▶️ Retomar Lote';
+    document.getElementById('btn-lote-iniciar').style.background = '';
+    document.getElementById('lote-status-text').textContent = '⏹️ Lote Pausado.';
+    document.getElementById('lote-status-text').style.color = 'var(--gear-slate)';
+    return;
+  }
+
+  const grupo = document.getElementById('lote-grupo').value.trim();
+  if (!grupo) {
+    showToast('Informe o nome do Grupo/Turma antes de iniciar.', 'warning');
+    document.getElementById('lote-grupo').focus();
+    return;
+  }
+
+  if (state.currentMode !== 'CADASTRO') {
+    await setSystemMode('CADASTRO');
+  }
+
+  loteAtivo = true;
+  loteLoopId++;
+  document.getElementById('btn-lote-iniciar').innerHTML = '⏹️ Pausar Lote';
+  document.getElementById('btn-lote-iniciar').style.background = '#d97706'; // Um laranja pra indicar pause
+  document.getElementById('lote-feedback').style.display = 'block';
+
+  // Encontra o próximo número disponível de forma segura, analisando os nomes
+  let maxNum = 0;
+  const regex = new RegExp(`^(\\d+)\\s+${grupo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+  
+  for (const u of (state.users || [])) {
+    const match = u.nome.match(regex);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+  
+  let startNum = maxNum + 1;
+  // Garante que o nome final realmente não existe (caso não siga exatamente o regex)
+  while ((state.users || []).some(u => u.nome.toLowerCase() === `${startNum} ${grupo}`.toLowerCase())) {
+    startNum++;
+  }
+
+  iniciarLoopLeituraLote(loteLoopId, grupo, startNum);
+}
+
+async function iniciarLoopLeituraLote(loopId, grupo, startNum) {
+  const statusText = document.getElementById('lote-status-text');
+  const historico = document.getElementById('lote-historico');
+  
+  let currentNum = startNum;
+
+  while (loteAtivo && loteLoopId === loopId) {
+    statusText.innerHTML = '<span class="pulse-reading">📡 Aproxime o próximo cartão...</span>';
+    statusText.style.color = 'var(--gear-blue)';
+
+    try {
+      const res = await authFetch('/api/leitor/capturar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeout: 5.0 })
+      });
+      const data = await res.json();
+      
+      if (!loteAtivo || loteLoopId !== loopId) break;
+
+      if (data.sucesso && data.uid) {
+        const uid = data.uid;
+        playAudioTone('unlock');
+        
+        const nomeFinal = `${currentNum} ${grupo}`;
+        const proximoId = state.nextSuggestedId;
+
+        const resCad = await authFetch('/api/usuarios', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: proximoId,
+            nome: nomeFinal,
+            grupo: grupo,
+            uid_cartao: uid,
+            ativo: true
+          })
+        });
+        const dataCad = await resCad.json();
+
+        if (dataCad.sucesso) {
+          state.nextSuggestedId = (parseInt(proximoId, 10) + 1).toString().padStart(3, '0');
+          currentNum++;
+
+          statusText.innerHTML = `✅ Cadastrado: <strong>${nomeFinal}</strong>`;
+          statusText.style.color = 'var(--color-success)';
+          historico.innerHTML = `<li>✅ ${nomeFinal} (UID: ${uid})</li>` + historico.innerHTML;
+          showToast(`${nomeFinal} salvo com sucesso!`);
+          
+          await new Promise(r => setTimeout(r, 1500));
+        } else {
+          playAudioTone('denied');
+          statusText.innerHTML = `❌ Erro: ${dataCad.erro}`;
+          statusText.style.color = 'var(--color-danger)';
+          historico.innerHTML = `<li style="color:var(--color-danger);">❌ Falha UID ${uid}: ${dataCad.erro}</li>` + historico.innerHTML;
+          await new Promise(r => setTimeout(r, 2500));
+        }
+      } else {
+        continue;
+      }
+    } catch (e) {
+      if (!loteAtivo) break;
+      statusText.innerHTML = `❌ Erro ou timeout. Retentando...`;
+      statusText.style.color = 'var(--color-danger)';
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
 }
 
@@ -813,10 +993,11 @@ async function salvarTrocaCartao(event) {
 /* ==========================================================================
    EDITAR NOME
    ========================================================================== */
-function abrirModalEditarNome(id, currentName) {
+function abrirModalEditarNome(id, currentName, currentGroup) {
   document.getElementById('edit-nome-user-id').value = id;
   document.getElementById('edit-nome-user-id-display').value = id;
   document.getElementById('edit-nome-valor').value = currentName;
+  document.getElementById('edit-grupo-valor').value = currentGroup || '';
   openModal('modal-editar-nome');
   setTimeout(() => document.getElementById('edit-nome-valor').focus(), 150);
 }
@@ -826,6 +1007,7 @@ async function salvarEdicaoNome(event) {
 
   const id = document.getElementById('edit-nome-user-id').value;
   const novoNome = document.getElementById('edit-nome-valor').value.trim();
+  const novoGrupo = document.getElementById('edit-grupo-valor').value.trim();
 
   if (!novoNome) {
     showToast('Informe o novo nome do membro.', 'warning');
@@ -833,10 +1015,10 @@ async function salvarEdicaoNome(event) {
   }
 
   try {
-    const res = await authFetch(`/api/usuarios/${id}/trocar-nome`, {
+    const res = await authFetch(`/api/usuarios/${id}/editar-membro`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ novo_nome: novoNome })
+      body: JSON.stringify({ novo_nome: novoNome, novo_grupo: novoGrupo })
     });
     const data = await res.json();
     if (data.sucesso) {
@@ -1006,6 +1188,7 @@ function renderLogsTable() {
   if (state.logSearch) {
     filtrados = filtrados.filter(l =>
       (l.usuario_nome && l.usuario_nome.toLowerCase().includes(state.logSearch)) ||
+      (l.usuario_grupo && l.usuario_grupo.toLowerCase().includes(state.logSearch)) ||
       (l.uid_cartao && l.uid_cartao.toLowerCase().includes(state.logSearch)) ||
       (l.usuario_id && l.usuario_id.toLowerCase().includes(state.logSearch)) ||
       (l.motivo && l.motivo.toLowerCase().includes(state.logSearch))
@@ -1037,7 +1220,7 @@ function renderLogsTable() {
   if (paginaItens.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5" style="text-align: center; color: var(--gear-slate); padding: 36px;">
+        <td colspan="6" style="text-align: center; color: var(--gear-slate); padding: 36px;">
           ${state.logSearch ? 'Nenhum registro encontrado para o termo buscado.' : 'Nenhum registro de acesso registrado.'}
         </td>
       </tr>
@@ -1067,6 +1250,7 @@ function renderLogsTable() {
       <tr>
         <td style="font-family: ui-monospace, monospace; color: var(--gear-slate); font-size: 0.85rem;">${escapeHtml(timeFormatted)}</td>
         <td><strong>${l.usuario_nome ? escapeHtml(l.usuario_nome) : '<em style="color: var(--gear-slate)">Console / Remoto</em>'}</strong></td>
+        <td><span style="color: var(--gear-slate);">${escapeHtml(l.usuario_grupo || '-')}</span></td>
         <td><span class="badge-uid">${escapeHtml(l.uid_cartao)}</span></td>
         <td>${statusBadge}</td>
         <td>${escapeHtml(formatReason(l.motivo))}</td>
@@ -1234,10 +1418,15 @@ function setupInputMasks() {
 
   const searchInput = document.getElementById('user-search-input');
   if (searchInput) {
-    let debounce;
     searchInput.addEventListener('input', () => {
-      clearTimeout(debounce);
-      debounce = setTimeout(fetchUsers, 220);
+      renderUsersTable(state.users);
+    });
+  }
+
+  const groupSearchInput = document.getElementById('group-search-input');
+  if (groupSearchInput) {
+    groupSearchInput.addEventListener('input', () => {
+      renderUsersTable(state.users);
     });
   }
 }
