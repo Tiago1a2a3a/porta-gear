@@ -41,7 +41,7 @@ class LedStatus:
         try:
             (self.caminho_gpio / "value").write_text(valor)
         except Exception as e:
-            print(f"Erro LED: {e}") durante o uso normal
+            print(f"Erro LED: {e}")
 
     def piscar_sucesso(self) -> None:
         """Pisca o LED verde por 1.075s em background."""
